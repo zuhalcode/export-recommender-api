@@ -1,0 +1,45 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model Trademap {
+  hscode     String      @id @unique
+  name       String      @db.VarChar(255)
+  link       String      @db.VarChar(255)
+  created_at DateTime    @default(now()) @db.Timestamp(6)
+  importers  Importers[]
+}
+
+model Importers {
+  id                Int      @id @default(autoincrement())
+  name              String
+  hscode            String
+  trade_balance     String
+  quantity_imported String
+  value_imported    String
+  quantity_unit     String?
+  unit_value        String
+  prediction        Float?
+  created_at        DateTime @default(now()) @db.Timestamp(6)
+
+  trademap  Trademap?   @relation(fields: [hscode], references: [hscode])
+  Exporters Exporters[]
+}
+
+model Exporters {
+  id                Int      @id @default(autoincrement())
+  importer_id       Int
+  name              String
+  trade_balance     String
+  quantity_imported String
+  value_imported    String
+  unit_value        String
+  created_at        DateTime @default(now()) @db.Timestamp(6)
+
+  importer Importers @relation(fields: [importer_id], references: [id])
+}

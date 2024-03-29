@@ -806,5 +806,129 @@ export class TrademapService {
   // SCRAPING
 
   // CLEANING
+
+  async clean() {
+    const filename = 'raw-exporters';
+    const __dirname = join(process.cwd(), 'src', 'data');
+    const __cleanDirname = join(process.cwd(), 'src', 'data', 'clean');
+
+    const filePath = join(__dirname, `${filename}.json`);
+    const cleanFilePath = join(__cleanDirname, `clean-exporters.json`);
+
+    try {
+      fs.readFile(filePath, 'utf8', (err, data) => {
+        if (err) {
+          console.error('Error reading file:', err);
+          return;
+        }
+
+        // Parse the JSON data
+        const jsonData = JSON.parse(data);
+
+        jsonData.map((item) => {
+          for (const key in item) {
+            if (
+              typeof item[key] === 'string' &&
+              item[key].charCodeAt(0) === 160
+            ) {
+              item[key] = '';
+            }
+          }
+          return item;
+        });
+
+        // Function to check for duplicate objects
+        const removeDuplicates = (arr) => {
+          const uniqueObjects = {};
+          arr.forEach((obj) => {
+            const key = `${obj.importer_id}_${obj.name}_${obj.tradeBalance}_${obj.quantityImported}_${obj.valueImported}_${obj.unitValue}`;
+            uniqueObjects[key] = obj;
+          });
+          return Object.values(uniqueObjects);
+        };
+
+        // Remove duplicates
+        const uniqueData = removeDuplicates(jsonData);
+
+        // Convert back to JSON string
+        const cleanedData = JSON.stringify(uniqueData, null, 2);
+
+        // Write cleaned data to file
+        fs.writeFile(cleanFilePath, cleanedData, (err) => {
+          if (err) {
+            console.error('Error writing file:', err);
+            return;
+          }
+          console.log(
+            `\nData clean-exporters.json cleaned successfully from ${jsonData.length} to ${uniqueData.length}.`,
+          );
+        });
+      });
+    } catch (error) {
+      console.error('Error parsing JSON:', error);
+    }
+  }
+
+  async combine() {
+    const fileCodes = [
+      '03',
+      '04',
+      '05',
+      '06',
+      '07',
+      '08',
+      '09',
+      '10',
+      '14',
+      '15',
+      '16',
+      '17',
+      '18',
+      '19',
+      '20',
+      '21',
+      '22',
+      '23',
+      '34',
+      '38',
+      '40',
+      '42-61',
+      '62',
+      '64',
+      '67',
+      '94',
+    ];
+
+    const __dirname = join(process.cwd(), 'src', 'data');
+    const combinedFilePath = join(__dirname, `raw-exporters.json`);
+
+    const combinedData = [];
+
+    for (const code of fileCodes) {
+      const cleanFilePath = join(__dirname, `scrapedHscode-${code}.json`);
+      try {
+        const fileData = fs.readFileSync(cleanFilePath, 'utf8');
+        combinedData.push(JSON.parse(fileData));
+      } catch (err) {
+        console.error(`Error reading file ${cleanFilePath}:`, err);
+      }
+    }
+
+    fs.writeFile(
+      combinedFilePath,
+      JSON.stringify(combinedData.flat(), null, 2),
+      (err) => {
+        if (err) {
+          console.error(`Error writing file ${combinedFilePath}:`, err);
+          return;
+        }
+        console.log(
+          `Data from all files combined successfully! Result saved in:`,
+          combinedFilePath,
+        );
+      },
+    );
+  }
+
   // CLEANING
 }

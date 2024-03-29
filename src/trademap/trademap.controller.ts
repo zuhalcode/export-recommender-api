@@ -65,4 +65,11 @@ export class TrademapController {
 
     return scrapedData;
   }
+
+  @Post('/combine')
+  async combine() {
+    await this.trademapService.combine();
+
+    return { message: 'Combine Exporter Successfully' };
+  }
 }
