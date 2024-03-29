@@ -225,16 +225,38 @@ export class TrademapService {
 
   async createImporters() {
     try {
-      const importersJSONData = this.getLocalJSONData('scrapedImporters.json');
+      const importersJSONData = this.getLocalJSONData('clean-importers.json');
 
       const createdData = await this.databaseService.importers.createMany({
         data: importersJSONData.map((data) => ({
-          name: data.importer,
+          id: data.id,
+          name: data.name,
           hscode: data.hscode,
+          trade_balance: data.trade_balance,
+          quantity_imported: data.quantity_imported,
+          value_imported: data.value_imported,
+          quantity_unit: data.quantity_unit,
+          unit_value: data.unit_value || 0,
+        })),
+      });
+
+      return createdData;
+    } catch (e) {
+      console.log(e);
+    }
+  }
+
+  async createExporters() {
+    try {
+      const exportersJSONData = this.getLocalJSONData('test.json');
+
+      const createdData = await this.databaseService.exporters.createMany({
+        data: exportersJSONData.map((data) => ({
+          importer_id: data.importer_id,
+          name: data.name,
           trade_balance: data.tradeBalance,
           quantity_imported: data.quantityImported,
           value_imported: data.valueImported,
-          quantity_unit: data.quantityUnit,
           unit_value: data.unitValue || '0',
         })),
       });
@@ -808,12 +830,12 @@ export class TrademapService {
   // CLEANING
 
   async clean() {
-    const filename = 'raw-exporters';
+    const filename = 'raw-importers';
     const __dirname = join(process.cwd(), 'src', 'data');
     const __cleanDirname = join(process.cwd(), 'src', 'data', 'clean');
 
     const filePath = join(__dirname, `${filename}.json`);
-    const cleanFilePath = join(__cleanDirname, `clean-exporters.json`);
+    const cleanFilePath = join(__cleanDirname, `clean-importers.json`);
 
     try {
       fs.readFile(filePath, 'utf8', (err, data) => {
@@ -832,26 +854,34 @@ export class TrademapService {
               item[key].charCodeAt(0) === 160
             ) {
               item[key] = '';
+            } else if (
+              key !== 'name' &&
+              key !== 'importer_id' &&
+              key !== 'hscode' &&
+              typeof item[key] === 'string' &&
+              (item[key].includes(',') || !isNaN(item[key]))
+            ) {
+              item[key] = parseFloat(item[key].replace(/,/g, ''));
             }
           }
           return item;
         });
 
         // Function to check for duplicate objects
-        const removeDuplicates = (arr) => {
-          const uniqueObjects = {};
-          arr.forEach((obj) => {
-            const key = `${obj.importer_id}_${obj.name}_${obj.tradeBalance}_${obj.quantityImported}_${obj.valueImported}_${obj.unitValue}`;
-            uniqueObjects[key] = obj;
-          });
-          return Object.values(uniqueObjects);
-        };
+        // const removeDuplicates = (arr) => {
+        //   const uniqueObjects = {};
+        //   arr.forEach((obj) => {
+        //     const key = `${obj.importer_id}_${obj.name}_${obj.tradeBalance}_${obj.quantityImported}_${obj.valueImported}_${obj.unitValue}`;
+        //     uniqueObjects[key] = obj;
+        //   });
+        //   return Object.values(uniqueObjects);
+        // };
 
-        // Remove duplicates
-        const uniqueData = removeDuplicates(jsonData);
+        // const uniqueData = removeDuplicates(jsonData);
 
         // Convert back to JSON string
-        const cleanedData = JSON.stringify(uniqueData, null, 2);
+        // const cleanedData = JSON.stringify(uniqueData, null, 2);
+        const cleanedData = JSON.stringify(jsonData, null, 2);
 
         // Write cleaned data to file
         fs.writeFile(cleanFilePath, cleanedData, (err) => {
@@ -860,7 +890,7 @@ export class TrademapService {
             return;
           }
           console.log(
-            `\nData clean-exporters.json cleaned successfully from ${jsonData.length} to ${uniqueData.length}.`,
+            `\nData clean-exporters.json cleaned successfully from ${jsonData.length} to .`,
           );
         });
       });

@@ -19,11 +19,11 @@ model Importers {
   id                Int      @id @default(autoincrement())
   name              String
   hscode            String
-  trade_balance     String
-  quantity_imported String
-  value_imported    String
+  trade_balance     Float
+  quantity_imported Float
+  value_imported    Float
   quantity_unit     String?
-  unit_value        String
+  unit_value        Float
   prediction        Float?
   created_at        DateTime @default(now()) @db.Timestamp(6)
 
@@ -35,10 +35,10 @@ model Exporters {
   id                Int      @id @default(autoincrement())
   importer_id       Int
   name              String
-  trade_balance     String
-  quantity_imported String
-  value_imported    String
-  unit_value        String
+  trade_balance     Float
+  quantity_imported Float
+  value_imported    Float
+  unit_value        Float
   created_at        DateTime @default(now()) @db.Timestamp(6)
 
   importer Importers @relation(fields: [importer_id], references: [id])

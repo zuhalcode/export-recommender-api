@@ -59,17 +59,24 @@ export class TrademapController {
     return scrapedExporter;
   }
 
-  @Post('/test')
+  @Post('/insert/exporters')
   async scrape() {
-    const scrapedData = await this.trademapService.scrapeTest();
+    const exporterData = await this.trademapService.createExporters();
 
-    return scrapedData;
+    return exporterData;
   }
 
   @Post('/combine')
   async combine() {
     await this.trademapService.combine();
 
-    return { message: 'Combine Exporter Successfully' };
+    return { message: 'Combine all Exporters Successfully' };
+  }
+
+  @Post('/clean')
+  async clean() {
+    await this.trademapService.clean();
+
+    return { message: 'Cleaning all Exporters Successfully' };
   }
 }
