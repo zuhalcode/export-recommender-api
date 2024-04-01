@@ -14,9 +14,9 @@ export class TrademapService {
     '#ctl00_NavigationControl_DropDownList_Product';
 
   // DIRECT USED FUNCTION
-  private getLocalJSONData(filename: string) {
+  private getLocalJSONData(filename: string, dir: string = '') {
     try {
-      const filePath = join(process.cwd(), 'src', 'data', filename);
+      const filePath = join(process.cwd(), 'src', 'data', dir, filename);
       const rawData = fs.readFileSync(filePath, 'utf-8');
       const data = JSON.parse(rawData);
       return data;
@@ -248,20 +248,29 @@ export class TrademapService {
 
   async createExporters() {
     try {
-      const exportersJSONData = this.getLocalJSONData('test.json');
+      const exportersJSONData = this.getLocalJSONData(
+        'clean-exporters.json',
+        'clean',
+      );
 
       const createdData = await this.databaseService.exporters.createMany({
         data: exportersJSONData.map((data) => ({
           importer_id: data.importer_id,
           name: data.name,
-          trade_balance: data.tradeBalance,
-          quantity_imported: data.quantityImported,
-          value_imported: data.valueImported,
-          unit_value: data.unitValue || '0',
+          trade_balance: parseFloat(
+            data.tradeBalance === '' ? 0 : data.tradeBalance,
+          ),
+          quantity_imported: parseFloat(
+            data.quantityImported === '' ? 0 : data.quantityImported,
+          ),
+          value_imported: parseFloat(
+            data.valueImported === '' ? 0 : data.valueImported,
+          ),
+          unit_value: parseFloat(data.unitValue === '' ? 0 : data.unitValue),
         })),
       });
 
-      return createdData;
+      return { message: 'Exporters Created Successfully', createdData };
     } catch (e) {
       console.log(e);
     }
@@ -830,12 +839,12 @@ export class TrademapService {
   // CLEANING
 
   async clean() {
-    const filename = 'raw-importers';
+    const filename = 'raw-exporters';
     const __dirname = join(process.cwd(), 'src', 'data');
     const __cleanDirname = join(process.cwd(), 'src', 'data', 'clean');
 
     const filePath = join(__dirname, `${filename}.json`);
-    const cleanFilePath = join(__cleanDirname, `clean-importers.json`);
+    const cleanFilePath = join(__cleanDirname, `clean-exporters.json`);
 
     try {
       fs.readFile(filePath, 'utf8', (err, data) => {
@@ -868,20 +877,19 @@ export class TrademapService {
         });
 
         // Function to check for duplicate objects
-        // const removeDuplicates = (arr) => {
-        //   const uniqueObjects = {};
-        //   arr.forEach((obj) => {
-        //     const key = `${obj.importer_id}_${obj.name}_${obj.tradeBalance}_${obj.quantityImported}_${obj.valueImported}_${obj.unitValue}`;
-        //     uniqueObjects[key] = obj;
-        //   });
-        //   return Object.values(uniqueObjects);
-        // };
+        const removeDuplicates = (arr) => {
+          const uniqueObjects = {};
+          arr.forEach((obj) => {
+            const key = `${obj.importer_id}_${obj.name}_${obj.tradeBalance}_${obj.quantityImported}_${obj.valueImported}_${obj.unitValue}`;
+            uniqueObjects[key] = obj;
+          });
+          return Object.values(uniqueObjects);
+        };
 
-        // const uniqueData = removeDuplicates(jsonData);
+        const uniqueData = removeDuplicates(jsonData);
 
         // Convert back to JSON string
-        // const cleanedData = JSON.stringify(uniqueData, null, 2);
-        const cleanedData = JSON.stringify(jsonData, null, 2);
+        const cleanedData = JSON.stringify(uniqueData, null, 2);
 
         // Write cleaned data to file
         fs.writeFile(cleanFilePath, cleanedData, (err) => {
@@ -890,7 +898,7 @@ export class TrademapService {
             return;
           }
           console.log(
-            `\nData clean-exporters.json cleaned successfully from ${jsonData.length} to .`,
+            `\nData clean-exporters.json cleaned successfully from ${jsonData.length} to ${uniqueData.length}.`,
           );
         });
       });
@@ -958,6 +966,102 @@ export class TrademapService {
         );
       },
     );
+  }
+
+  async cleanFiles() {
+    const fileCode = [
+      '03',
+      '04',
+      '05',
+      '06',
+      '07',
+      '08',
+      '09',
+      '10',
+      '14',
+      '15',
+      '16',
+      '17',
+      '18',
+      '19',
+      '20',
+      '21',
+      '22',
+      '23',
+      '34',
+      '38',
+      '40',
+      '42-61',
+      '62',
+      '64',
+      '67',
+      '94',
+    ];
+
+    const filename = 'scrapedHscode';
+    const __dirname = join(process.cwd(), 'src', 'data');
+    const __cleanDirname = join(process.cwd(), 'src', 'data', 'clean');
+
+    for (const code of fileCode) {
+      const filePath = join(__dirname, `${filename}-${code}.json`);
+      const cleanFilePath = join(
+        __cleanDirname,
+        `${filename}-${code}-clean.json`,
+      );
+
+      try {
+        fs.readFile(filePath, 'utf8', (err, data) => {
+          if (err) {
+            console.error('Error reading file:', err);
+            return;
+          }
+
+          // Parse the JSON data
+          const jsonData = JSON.parse(data);
+
+          jsonData.map((item) => {
+            for (const key in item) {
+              if (
+                typeof item[key] === 'string' &&
+                item[key].charCodeAt(0) === 160
+              ) {
+                item[key] = '';
+              }
+            }
+            return item;
+          });
+
+          // Function to check for duplicate objects
+          const removeDuplicates = (arr) => {
+            const uniqueObjects = {};
+            arr.forEach((obj) => {
+              const key = `${obj.importer_id}_${obj.name}_${obj.tradeBalance}_${obj.quantityImported}_${obj.valueImported}_${obj.unitValue}`;
+              uniqueObjects[key] = obj;
+            });
+            return Object.values(uniqueObjects);
+          };
+
+          // Remove duplicates
+          const uniqueData = removeDuplicates(jsonData);
+
+          // Convert back to JSON string
+          const cleanedData = JSON.stringify(uniqueData, null, 2);
+
+          // Write cleaned data to file
+          fs.writeFile(cleanFilePath, cleanedData, (err) => {
+            if (err) {
+              console.error('Error writing file:', err);
+              return;
+            }
+            console.log(
+              `\nData ${filename}-${code}.json cleaned successfully from ${jsonData.length} to ${uniqueData.length}.`,
+            );
+          });
+        });
+      } catch (error) {
+        console.error('Error parsing JSON:', error);
+      }
+    }
   }
 
   // CLEANING

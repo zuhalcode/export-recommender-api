@@ -59,7 +59,7 @@ export class TrademapController {
     return scrapedExporter;
   }
 
-  @Post('/insert/exporters')
+  @Post('/create/exporters')
   async scrape() {
     const exporterData = await this.trademapService.createExporters();
 
@@ -76,6 +76,13 @@ export class TrademapController {
   @Post('/clean')
   async clean() {
     await this.trademapService.clean();
+
+    return { message: 'Cleaning all Exporters Successfully' };
+  }
+
+  @Post('/clean-files')
+  async cleanFiles() {
+    await this.trademapService.cleanFiles();
 
     return { message: 'Cleaning all Exporters Successfully' };
   }
