@@ -1,16 +1,122 @@
 /* eslint-disable prettier/prettier */
 import { Injectable } from '@nestjs/common';
-import { DatabaseService } from 'src/database/database.service';
+import { DatabaseService } from 'src/common/database.service';
 
 @Injectable()
 export class RegressionService {
   constructor(private readonly databaseService: DatabaseService) {}
 
-  async linearRegression() {
-    const importer = await this.databaseService.importers.findFirst({
+  async multipleLinearRegression() {
+    const importers = await this.databaseService.importers.findMany({
       where: { hscode: '0301' },
       select: {
         id: true,
+        hscode: true,
+        name: true,
+        trade_balance: true,
+        quantity_imported: true,
+        value_imported: true,
+        unit_value: true,
+      },
+    });
+
+    const result = [];
+
+    for (const importer of importers) {
+      const exporters = await this.databaseService.exporters.findMany({
+        where: {
+          importer_id: importer.id,
+          trade_balance: { not: 0 },
+        },
+        select: {
+          name: true,
+          trade_balance: true,
+          quantity_imported: true,
+          value_imported: true,
+          unit_value: true,
+        },
+      });
+
+      const y = exporters.map((exporter) => exporter.trade_balance); // Trade Balance
+      const x1 = exporters.map((exporter) => exporter.quantity_imported); // Quantity Imported
+      const x2 = exporters.map((exporter) => exporter.value_imported); // Value Imported
+      const x3 = exporters.map((exporter) => exporter.unit_value); // Unit Value
+
+      const {
+        x1Sum,
+        x2Sum,
+        x3Sum,
+        x1x1Sum,
+        x1x2Sum,
+        x1x3Sum,
+        x2x2Sum,
+        x2x3Sum,
+        x3x3Sum,
+        ySum,
+        x1ySum,
+        x2ySum,
+        x3ySum,
+      } = this.sumingValues(y, x1, x2, x3);
+
+      const matrixValues = {
+        n: y.length,
+        x1Sum,
+        x2Sum,
+        x3Sum,
+        x1x1Sum,
+        x1x2Sum,
+        x1x3Sum,
+        x2x2Sum,
+        x2x3Sum,
+        x3x3Sum,
+        ySum,
+        x1ySum,
+        x2ySum,
+        x3ySum,
+      };
+
+      const coef = this.matrixModelling(matrixValues);
+
+      const prediction =
+        coef.b0 +
+        coef.b1 * importer.quantity_imported +
+        coef.b2 * importer.value_imported +
+        coef.b3 * importer.unit_value;
+
+      const object = {
+        id: importer.id,
+        hscode: importer.hscode,
+        name: importer.name,
+        yActual: importer.trade_balance,
+        prediction,
+      };
+
+      result.push(object);
+    }
+
+    result.sort((a, b) => {
+      // If both predictions are null, keep them in their current order
+      if (a.prediction === null && b.prediction === null) return 0;
+      // If a's prediction is null, move it to the end
+      if (a.prediction === null) return 1;
+      // If b's prediction is null, move it to the end
+      if (b.prediction === null) return -1;
+      // Otherwise, compare predictions numerically
+      return a.prediction - b.prediction;
+    });
+
+    return {
+      message: 'Regression successfully',
+      result,
+    };
+  }
+
+  async linearRegression() {
+    const importer = await this.databaseService.importers.findFirst({
+      where: { hscode: '0301', id: 10 },
+      select: {
+        id: true,
+        hscode: true,
         name: true,
         trade_balance: true,
         quantity_imported: true,
@@ -33,99 +139,119 @@ export class RegressionService {
       },
     });
 
-    // Trade Balance
-    const y = exporters.map((exporter) => exporter.trade_balance);
-    const ySum = y.reduce(
-      (accumulator, currentValue) => accumulator + currentValue,
-      0,
-    );
+    console.log(exporters);
 
-    // Quantity Imported
-    const x1 = exporters.map((exporter) => exporter.quantity_imported);
-    const x1Sum = x1.reduce(
-      (accumulator, currentValue) => accumulator + currentValue,
-      0,
-    );
+    const y = exporters.map((exporter) => exporter.trade_balance); // Trade Balance
+    const x1 = exporters.map((exporter) => exporter.quantity_imported); // Quantity Imported
+    const x2 = exporters.map((exporter) => exporter.value_imported); // Value Imported
+    const x3 = exporters.map((exporter) => exporter.unit_value); // Unit Value
 
-    // Value Imported
-    const x2 = exporters.map((exporter) => exporter.value_imported);
-    const x2Sum = x2.reduce(
-      (accumulator, currentValue) => accumulator + currentValue,
-      0,
-    );
+    const {
+      x1Sum,
+      x2Sum,
+      x3Sum,
+      x1x1Sum,
+      x1x2Sum,
+      x1x3Sum,
+      x2x2Sum,
+      x2x3Sum,
+      x3x3Sum,
+      ySum,
+      x1ySum,
+      x2ySum,
+      x3ySum,
+    } = this.sumingValues(y, x1, x2, x3);
 
-    // Unit Value
-    const x3 = exporters.map((exporter) => exporter.unit_value);
-    const x3Sum = x3.reduce(
-      (accumulator, currentValue) => accumulator + currentValue,
-      0,
-    );
+    const matrixValues = {
+      n: y.length,
+      x1Sum,
+      x2Sum,
+      x3Sum,
+      x1x1Sum,
+      x1x2Sum,
+      x1x3Sum,
+      x2x2Sum,
+      x2x3Sum,
+      x3x3Sum,
+      ySum,
+      x1ySum,
+      x2ySum,
+      x3ySum,
+    };
 
-    const x1x1 = x1.map((value) => value * value);
-    const x1x1Sum = x1x1.reduce(
-      (accumulator, currentValue) => accumulator + currentValue,
-      0,
-    );
+    const coef = this.matrixModelling(matrixValues);
 
-    const x1x2 = x1.map((x1Value, index) => x1Value * x2[index]);
-    const x1x2Sum = x1x2.reduce(
-      (accumulator, currentValue) => accumulator + currentValue,
-      0,
-    );
+    const prediction =
+      coef.b0 +
+      coef.b1 * importer.quantity_imported +
+      coef.b2 * importer.value_imported +
+      coef.b3 * importer.unit_value;
 
-    const x1x3 = x1.map((x1Value, index) => x1Value * x3[index]);
-    const x1x3Sum = x1x3.reduce(
-      (accumulator, currentValue) => accumulator + currentValue,
-      0,
-    );
+    return {
+      message: 'Regression successfully',
+      importer,
+      exporters,
+      result: { importer: importer.name, prediction },
+    };
+  }
 
-    const x2x2 = x2.map((value) => value * value);
-    const x2x2Sum = x2x2.reduce(
-      (accumulator, currentValue) => accumulator + currentValue,
-      0,
-    );
+  determinant = (matrix: number[][]) => {
+    if (matrix.length !== 4 || matrix[0].length !== 4) {
+      throw new Error('Matrix must be 4x4');
+    }
 
-    const x2x3 = x2.map((x2Value, index) => x2Value * x3[index]);
-    const x2x3Sum = x2x3.reduce(
-      (accumulator, currentValue) => accumulator + currentValue,
-      0,
-    );
+    // Helper function to get minor matrix
+    const getMinor = (
+      matrix: number[][],
+      row: number,
+      col: number,
+    ): number[][] => {
+      return matrix
+        .filter((_, i) => i !== row)
+        .map((row) => row.filter((_, j) => j !== col));
+    };
 
-    const x3x1 = x3.map((x3Value, index) => x3Value * x1[index]);
-    const x3x1Sum = x3x1.reduce(
-      (accumulator, currentValue) => accumulator + currentValue,
-      0,
-    );
+    // Recursive function to calculate determinant
+    const calculateDeterminant = (matrix: number[][]) => {
+      if (matrix.length === 2) {
+        return matrix[0][0] * matrix[1][1] - matrix[0][1] * matrix[1][0];
+      } else {
+        let det = 0;
+        for (let i = 0; i < matrix.length; i++) {
+          const minor = getMinor(matrix, 0, i);
+          const cofactor = matrix[0][i] * calculateDeterminant(minor);
+          det += i % 2 === 0 ? cofactor : -cofactor;
+        }
+        return det;
+      }
+    };
 
-    const x3x3 = x3.map((value) => value * value);
-    const x3x3Sum = x3x3.reduce(
-      (accumulator, currentValue) => accumulator + currentValue,
-      0,
-    );
+    return calculateDeterminant(matrix);
+  };
 
-    const x1y = x1.map((x1Value, index) => x1Value * y[index]);
-    const x1ySum = x1y.reduce(
-      (accumulator, currentValue) => accumulator + currentValue,
-      0,
-    );
-
-    const x2y = x2.map((x2Value, index) => x2Value * y[index]);
-    const x2ySum = x2y.reduce(
-      (accumulator, currentValue) => accumulator + currentValue,
-      0,
-    );
-
-    const x3y = x3.map((x3Value, index) => x3Value * y[index]);
-    const x3ySum = x3y.reduce(
-      (accumulator, currentValue) => accumulator + currentValue,
-      0,
-    );
+  matrixModelling = (values) => {
+    const {
+      n,
+      x1Sum,
+      x2Sum,
+      x3Sum,
+      x1x1Sum,
+      x1x2Sum,
+      x1x3Sum,
+      x2x2Sum,
+      x2x3Sum,
+      x3x3Sum,
+      ySum,
+      x1ySum,
+      x2ySum,
+      x3ySum,
+    } = values;
 
     const matrixM = [
-      [y.length, x1Sum, x2Sum, x3Sum],
+      [n, x1Sum, x2Sum, x3Sum],
       [x1Sum, x1x1Sum, x1x2Sum, x1x3Sum],
       [x2Sum, x1x2Sum, x2x2Sum, x2x3Sum],
-      [x3Sum, x3x1Sum, x2x3Sum, x3x3Sum],
+      [x3Sum, x1x3Sum, x2x3Sum, x3x3Sum],
     ];
 
     const matrixH = [[ySum], [x1ySum], [x2ySum], [x3ySum]];
@@ -166,68 +292,95 @@ export class RegressionService {
     const b2 = detM3 / detM;
     const b3 = detM4 / detM;
 
-    const prediction =
-      b0 +
-      b1 * importer.quantity_imported +
-      b2 * importer.value_imported +
-      b3 * importer.unit_value;
+    return { b0, b1, b2, b3 };
+  };
+
+  sumingValues = (y: number[], x1: number[], x2: number[], x3: number[]) => {
+    const ySum = y.reduce(
+      (accumulator, currentValue) => accumulator + currentValue,
+      0,
+    );
+    const x1Sum = x1.reduce(
+      (accumulator, currentValue) => accumulator + currentValue,
+      0,
+    );
+    const x2Sum = x2.reduce(
+      (accumulator, currentValue) => accumulator + currentValue,
+      0,
+    );
+    const x3Sum = x3.reduce(
+      (accumulator, currentValue) => accumulator + currentValue,
+      0,
+    );
+
+    const x1x1 = x1.map((value) => value * value);
+    const x1x1Sum = x1x1.reduce(
+      (accumulator, currentValue) => accumulator + currentValue,
+      0,
+    );
+
+    const x1x2 = x1.map((x1Value, index) => x1Value * x2[index]);
+    const x1x2Sum = x1x2.reduce(
+      (accumulator, currentValue) => accumulator + currentValue,
+      0,
+    );
+
+    const x1x3 = x1.map((x1Value, index) => x1Value * x3[index]);
+    const x1x3Sum = x1x3.reduce(
+      (accumulator, currentValue) => accumulator + currentValue,
+      0,
+    );
+
+    const x2x2 = x2.map((value) => value * value);
+    const x2x2Sum = x2x2.reduce(
+      (accumulator, currentValue) => accumulator + currentValue,
+      0,
+    );
+
+    const x2x3 = x2.map((x2Value, index) => x2Value * x3[index]);
+    const x2x3Sum = x2x3.reduce(
+      (accumulator, currentValue) => accumulator + currentValue,
+      0,
+    );
+
+    const x3x3 = x3.map((value) => value * value);
+    const x3x3Sum = x3x3.reduce(
+      (accumulator, currentValue) => accumulator + currentValue,
+      0,
+    );
+
+    const x1y = x1.map((x1Value, index) => x1Value * y[index]);
+    const x1ySum = x1y.reduce(
+      (accumulator, currentValue) => accumulator + currentValue,
+      0,
+    );
+
+    const x2y = x2.map((x2Value, index) => x2Value * y[index]);
+    const x2ySum = x2y.reduce(
+      (accumulator, currentValue) => accumulator + currentValue,
+      0,
+    );
+
+    const x3y = x3.map((x3Value, index) => x3Value * y[index]);
+    const x3ySum = x3y.reduce(
+      (accumulator, currentValue) => accumulator + currentValue,
+      0,
+    );
 
     return {
-      message: 'Regression successfully',
-      prediction,
-      yActual: importer.trade_balance,
-      coef: [b0, b1, b2, b3],
-      det: [detM, detM1, detM2, detM3],
-      matrixM0,
-      matrixM1,
-      matrixM2,
-      matrixM3,
-      sum: [
-        ySum,
-        x1Sum,
-        x2Sum,
-        x3Sum,
-        x1x1Sum,
-        x1x2Sum,
-        x1x3Sum,
-        x2x2Sum,
-        x2x3Sum,
-        x3x1Sum,
-        x3x3Sum,
-        x1ySum,
-        x2ySum,
-        x3ySum,
-      ],
+      ySum,
+      x1Sum,
+      x2Sum,
+      x3Sum,
+      x1x1Sum,
+      x1x2Sum,
+      x1x3Sum,
+      x2x2Sum,
+      x2x3Sum,
+      x3x3Sum,
+      x1ySum,
+      x2ySum,
+      x3ySum,
     };
-  }
-
-  determinant = (matrix) => {
-    if (matrix.length !== 4 || matrix[0].length !== 4) {
-      throw new Error('Matrix must be 4x4');
-    }
-
-    // Helper function to get minor matrix
-    const getMinor = (matrix, row, col) => {
-      return matrix
-        .filter((_, i) => i !== row)
-        .map((row) => row.filter((_, j) => j !== col));
-    };
-
-    // Recursive function to calculate determinant
-    const calculateDeterminant = (matrix) => {
-      if (matrix.length === 2) {
-        return matrix[0][0] * matrix[1][1] - matrix[0][1] * matrix[1][0];
-      } else {
-        let det = 0;
-        for (let i = 0; i < matrix.length; i++) {
-          const minor = getMinor(matrix, 0, i);
-          const cofactor = matrix[0][i] * calculateDeterminant(minor);
-          det += i % 2 === 0 ? cofactor : -cofactor;
-        }
-        return det;
-      }
-    };
-
-    return calculateDeterminant(matrix);
   };
 }

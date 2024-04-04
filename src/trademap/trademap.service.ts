@@ -1,10 +1,14 @@
 /* eslint-disable prettier/prettier */
 import { HttpStatus, Injectable } from '@nestjs/common';
 import puppeteer, { Page } from 'puppeteer';
-import { DatabaseService } from 'src/database/database.service';
 import * as fs from 'fs';
 import { join } from 'path';
-import { CreateTrademapDTO } from './dto/create-trademap.dto';
+import {
+  ScrapeExporterResponse,
+  ScrapeImporterResponse,
+} from 'src/model/trademap.model';
+
+import { DatabaseService } from 'src/common/database.service';
 
 @Injectable()
 export class TrademapService {
@@ -14,6 +18,7 @@ export class TrademapService {
     '#ctl00_NavigationControl_DropDownList_Product';
 
   // DIRECT USED FUNCTION
+
   private getLocalJSONData(filename: string, dir: string = '') {
     try {
       const filePath = join(process.cwd(), 'src', 'data', dir, filename);
@@ -151,9 +156,11 @@ export class TrademapService {
       );
     } else return { message: 'Dropdown element not found' };
   }
+
   // Direct used function
 
   // CRUD
+
   async create(scrapedData: any[]) {
     // Extract hscode values from the scraped data
     const hscodeValues = scrapedData.map((item) => item.hscode);
@@ -191,8 +198,7 @@ export class TrademapService {
 
   async createTrademap() {
     try {
-      const trademapJSONData: CreateTrademapDTO[] =
-        this.getLocalJSONData('scrapedHSCODE.json');
+      const trademapJSONData = this.getLocalJSONData('scrapedHSCODE.json');
 
       const existingData = await this.databaseService.trademap.findMany({
         where: {
@@ -275,9 +281,11 @@ export class TrademapService {
       console.log(e);
     }
   }
+
   // CRUD
 
   // SCRAPING
+
   async scrapeHscodeData() {
     const trademapData = this.getLocalJSONData('trademap-nonmigas.json');
 
@@ -337,12 +345,6 @@ export class TrademapService {
 
     await browser.close();
 
-    // const __dirname = join(process.cwd(), 'src', 'data');
-    // const filePath = join(__dirname, 'scrapedHSCODE.json');
-    // fs.writeFile(filePath, JSON.stringify(resultData, null, 2), (err) => {
-    //   if (err) throw err;
-    // });
-
     console.log(
       `Execute Time : ${
         (performance.now() - startTime) / 1000 >= 60
@@ -372,7 +374,7 @@ export class TrademapService {
 
     const trademapData = this.getLocalJSONData('scrapedHSCODE.json');
 
-    const importerData = [];
+    const importerData: ScrapeImporterResponse[] = [];
     const countData = [];
     for (const data of trademapData) {
       const { hscode, link } = data;
@@ -415,11 +417,11 @@ export class TrademapService {
 
             const mappedData = {
               importer: rowData[0].trim().toLowerCase(),
-              valueImported: rowData[1],
-              tradeBalance: rowData[2],
-              quantityImported: rowData[3],
-              quantityUnit: rowData[4].toLowerCase(),
-              unitValue: rowData[5],
+              value_imported: rowData[1],
+              trade_balance: rowData[2],
+              quantity_imported: rowData[3],
+              quantity_unit: rowData[4].toLowerCase(),
+              unit_value: rowData[5],
             };
 
             data.push(mappedData);
@@ -472,7 +474,9 @@ export class TrademapService {
 
     await browser.close();
 
-    return { countData, count: importerData.length, importerData };
+    const scraped_data = importerData;
+
+    return { scraped_data };
   }
 
   async scrapeRemainImporters() {
@@ -604,7 +608,7 @@ export class TrademapService {
     };
   }
 
-  async scrapeExportersTest() {
+  async scrapeExporters() {
     const browser = await puppeteer.launch({
       headless: false,
       args: ['--no-sandbox'],
@@ -617,8 +621,7 @@ export class TrademapService {
 
     const hscodeData = await this.databaseService.trademap.findMany({});
 
-    const finalExporterData = [];
-    const startTime = performance.now(); // Record start time
+    const scraped_data: ScrapeExporterResponse[] = [];
 
     for (const data of hscodeData) {
       const { hscode, link } = data;
@@ -699,17 +702,17 @@ export class TrademapService {
                   const mappedData = {
                     importer_id: importer.id,
                     name: rowData[0].trim().toLowerCase(),
-                    tradeBalance: rowData[2],
-                    quantityImported: rowData[4],
-                    valueImported: rowData[1],
-                    unitValue: rowData[6],
+                    trade_balance: rowData[2],
+                    quantity_imported: rowData[4],
+                    value_imported: rowData[1],
+                    unit_value: rowData[6],
                   };
                   data.push(mappedData);
                 }
                 return data;
               }, importer);
 
-              finalExporterData.push(...exporterData);
+              scraped_data.push(...exporterData);
 
               // Read the existing file to get its content
               fs.readFile(filePath, 'utf8', (err, data) => {
@@ -754,86 +757,9 @@ export class TrademapService {
     await browser.close();
     console.log('selesai');
 
-    return {
-      message: 'Scraped Exporters Successfully',
-      count: finalExporterData.length,
-      executeTime: `${
-        (performance.now() - startTime) / 1000 > 60
-          ? `${Math.floor((performance.now() - startTime) / 1000 / 60)} minute${
-              Math.floor((performance.now() - startTime) / 1000 / 60) > 1
-                ? 's'
-                : ''
-            } and ${(((performance.now() - startTime) / 1000) % 60).toFixed(
-              2,
-            )} seconds`
-          : `${((performance.now() - startTime) / 1000).toFixed(2)} seconds`
-      }`,
-    };
+    return { scraped_data };
   }
 
-  async scrapeTest() {
-    const browser = await puppeteer.launch({
-      headless: false,
-      args: ['--no-sandbox'],
-    }); // Set headless to false for visibility
-    const page = await browser.newPage();
-
-    const __dirname = join(process.cwd(), 'src', 'data');
-    const filePath = join(__dirname, 'scrapedData.json');
-
-    try {
-      const startTime = performance.now(); // Record start time
-      await page.goto(
-        'https://www.trademap.org/Country_SelProduct.aspx?nvpm=1%7c%7c%7c%7c%7c0701%7c%7c%7c4%7c1%7c1%7c1%7c1%7c1%7c2%7c1%7c%7c1',
-      );
-
-      // Wait for the dropdown element to be available
-      await page.waitForSelector(
-        'select[name="ctl00$PageContent$GridViewPanelControl$DropDownList_PageSize"]',
-      );
-
-      // Pilih elemen select berdasarkan nama atribut "name" dan nilai opsi "300"
-      await page.select(
-        'select[name="ctl00$PageContent$GridViewPanelControl$DropDownList_PageSize"]',
-        '300',
-      );
-
-      // Wait for navigation after login (replace 'dashboard' with the expected URL after login)
-      await page.waitForNavigation({ waitUntil: 'domcontentloaded' });
-      // Wait for the table data to be rendered (if necessary)
-      await page.waitForSelector('table');
-
-      // Extract data from all <tr> elements
-      const tableData = await page.evaluate(() => {
-        const rows = Array.from(document.querySelectorAll('table tr'));
-        const data = [];
-        for (let i = 15; i < rows.length - 6; i++) {
-          const columns = Array.from(rows[i].querySelectorAll('td'));
-          const rowData = columns
-            .slice(1, 14)
-            .map((column) => column.innerText);
-          data.push(rowData);
-        }
-        return data;
-      });
-
-      await browser.close();
-      console.log(
-        `Execute Time : ${((performance.now() - startTime) / 1000).toFixed(
-          2,
-        )} seconds`,
-      );
-      console.log(`Scraped ${tableData.length} data`);
-
-      fs.writeFile(filePath, JSON.stringify(tableData, null, 2), (err) => {
-        if (err) throw err;
-      });
-
-      return tableData;
-    } catch (error) {
-      console.error('Login failed:', error);
-    }
-  }
   // SCRAPING
 
   // CLEANING

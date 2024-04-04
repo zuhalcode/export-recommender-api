@@ -1,13 +1,11 @@
 import { Module } from '@nestjs/common';
-import { AppController } from './app.controller';
-import { AppService } from './app.service';
 import { TrademapModule } from './trademap/trademap.module';
-import { DatabaseModule } from './database/database.module';
 import { RegressionModule } from './regression/regression.module';
+import { CommonModule } from './common/common.module';
 
 @Module({
-  imports: [TrademapModule, DatabaseModule, RegressionModule],
-  controllers: [AppController],
-  providers: [AppService],
+  imports: [TrademapModule, RegressionModule, CommonModule],
+  controllers: [],
+  providers: [],
 })
 export class AppModule {}

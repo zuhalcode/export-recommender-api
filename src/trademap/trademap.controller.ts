@@ -1,23 +1,72 @@
 /* eslint-disable prettier/prettier */
-import { Controller, Post } from '@nestjs/common';
+import { Controller, Get, Post } from '@nestjs/common';
 import { TrademapService } from './trademap.service';
+import { WebResponse } from 'src/model/web.model';
+import {
+  CreateTrademapResponse,
+  ScrapeHscodeResponse,
+} from 'src/model/trademap.model';
 
-@Controller('trademap')
+@Controller('/api/trademap')
 export class TrademapController {
   constructor(private readonly trademapService: TrademapService) {}
 
-  @Post('/')
+  // FIX CONTROLLER
+  @Get('/scrape/hscode')
+  async scrapeHscode(): Promise<WebResponse<ScrapeHscodeResponse[]>> {
+    const scrapedHscode = await this.trademapService.scrapeHscodeData();
+
+    return { data: scrapedHscode };
+  }
+
+  @Post('/scrape/importer')
+  async scrapeImporters() {
+    const scrapedImporters = await this.trademapService.scrapeImporters();
+
+    return { data: scrapedImporters };
+  }
+
+  @Post('/scrape/exporter')
+  async scrapeExporter() {
+    const scrapedExporter = await this.trademapService.scrapeExporters();
+
+    return { data: scrapedExporter };
+  }
+
+  @Post()
+  async createTrademap(): Promise<WebResponse<CreateTrademapResponse>> {
+    // Scraping data
+    const createdTrademap: CreateTrademapResponse =
+      await this.trademapService.createTrademap();
+
+    return {
+      message: 'Trademap Data created successfully',
+      data: createdTrademap,
+    };
+  }
+
+  @Post('/importers')
+  async createImporter() {
+    const createdImporters = await this.trademapService.createImporters();
+
+    return {
+      message: 'Importer Data created successfully',
+      createdImporters,
+    };
+  }
+  // FIX CONTROLLER
+
+  // TESTING CONTROLLER
+
+  @Post() // OK
   async scrapeAndCreateProduct() {
     // Scraping data
     const scrapedData = await this.trademapService.scrapeHscodeData();
 
-    // Membuat produk berdasarkan data yang di-scrape
-    // const trademapHscode = await this.trademapService.create(scrapedData);
-
-    return { message: 'Data Scraped Successfully', scrapedData };
+    return { data: scrapedData };
   }
 
-  @Post('/create')
+  @Post('/create') // OK
   async create() {
     // Scraping data
     const createdTrademap = await this.trademapService.createTrademap();
@@ -28,7 +77,7 @@ export class TrademapController {
     };
   }
 
-  @Post('/create/importers')
+  @Post('/create/importers') // OK
   async createImporters() {
     const createdImporters = await this.trademapService.createImporters();
 
@@ -38,7 +87,7 @@ export class TrademapController {
     };
   }
 
-  @Post('/importers')
+  @Post('/importers') // OK
   async scrapeAndCreateImporters() {
     const scrapedImporters = await this.trademapService.scrapeImporters();
 
@@ -52,9 +101,9 @@ export class TrademapController {
     return scrapedImporters;
   }
 
-  @Post('/exporters')
+  @Post('/exporters') // OK
   async scrapeAndCreateExporter() {
-    const scrapedExporter = await this.trademapService.scrapeExportersTest();
+    const scrapedExporter = await this.trademapService.scrapeExporters();
 
     return scrapedExporter;
   }
@@ -86,4 +135,5 @@ export class TrademapController {
 
     return { message: 'Cleaning all Exporters Successfully' };
   }
+  // TESTING CONTROLLER
 }

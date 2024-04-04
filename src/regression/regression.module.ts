@@ -1,3 +1,4 @@
+/* eslint-disable prettier/prettier */
 import { Module } from '@nestjs/common';
 import { RegressionService } from './regression.service';
 import { RegressionController } from './regression.controller';
