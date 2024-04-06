@@ -38,6 +38,9 @@ export class RegressionService {
       });
 
       const y = exporters.map((exporter) => exporter.trade_balance); // Trade Balance
+
+      // if (y.length === 0) break;
+
       const x1 = exporters.map((exporter) => exporter.quantity_imported); // Quantity Imported
       const x2 = exporters.map((exporter) => exporter.value_imported); // Value Imported
       const x3 = exporters.map((exporter) => exporter.unit_value); // Unit Value
@@ -77,6 +80,37 @@ export class RegressionService {
 
       const coef = this.matrixModelling(matrixValues);
 
+      const exporterPredictions = exporters.map(
+        (_, index) =>
+          coef.b0 +
+          coef.b1 * x1[index] +
+          coef.b2 * x2[index] +
+          coef.b3 * x3[index],
+      );
+
+      // Calculate R Squared
+      const rSquaredRequirement = exporterPredictions.map(
+        (prediction, index) => {
+          const mean = ySum / exporters.length;
+          const actualValue = y[index];
+          const actualPredictDiff = (actualValue - prediction) ** 2;
+          const actualMeanDiff = (actualValue - mean) ** 2;
+          return [actualPredictDiff, actualMeanDiff];
+        },
+      );
+
+      const resultanRSquaredRequirement = rSquaredRequirement.reduce(
+        (acc, array) => {
+          acc[0] += array[0];
+          acc[1] += array[1];
+          return acc;
+        },
+        [0, 0],
+      );
+
+      const rSquared =
+        1 - resultanRSquaredRequirement[0] / resultanRSquaredRequirement[1];
+
       const prediction =
         coef.b0 +
         coef.b1 * importer.quantity_imported +
@@ -87,23 +121,18 @@ export class RegressionService {
         id: importer.id,
         hscode: importer.hscode,
         name: importer.name,
+        n: exporters.length,
         yActual: importer.trade_balance,
         prediction,
+        rSquared,
       };
 
       result.push(object);
     }
 
-    result.sort((a, b) => {
-      // If both predictions are null, keep them in their current order
-      if (a.prediction === null && b.prediction === null) return 0;
-      // If a's prediction is null, move it to the end
-      if (a.prediction === null) return 1;
-      // If b's prediction is null, move it to the end
-      if (b.prediction === null) return -1;
-      // Otherwise, compare predictions numerically
-      return a.prediction - b.prediction;
-    });
+    result.sort(
+      (a, b) => (a.prediction || Infinity) - (b.prediction || Infinity),
+    );
 
     return {
       message: 'Regression successfully',
