@@ -37,13 +37,13 @@ export class RegressionService {
         },
       });
 
-      const y = exporters.map((exporter) => exporter.trade_balance); // Trade Balance
+      const y: number[] = exporters.map((exporter) => exporter.trade_balance); // Trade Balance
 
-      // if (y.length === 0) break;
-
-      const x1 = exporters.map((exporter) => exporter.quantity_imported); // Quantity Imported
-      const x2 = exporters.map((exporter) => exporter.value_imported); // Value Imported
-      const x3 = exporters.map((exporter) => exporter.unit_value); // Unit Value
+      const x1: number[] = exporters.map(
+        (exporter) => exporter.quantity_imported,
+      ); // Quantity Imported
+      const x2: number[] = exporters.map((exporter) => exporter.value_imported); // Value Imported
+      const x3: number[] = exporters.map((exporter) => exporter.unit_value); // Unit Value
 
       const {
         x1Sum,
@@ -78,9 +78,10 @@ export class RegressionService {
         x3ySum,
       };
 
-      const coef = this.matrixModelling(matrixValues);
+      const coef: { b0: number; b1: number; b2: number; b3: number } =
+        this.matrixModelling(matrixValues);
 
-      const exporterPredictions = exporters.map(
+      const exporterPredictions: number[] = exporters.map(
         (_, index) =>
           coef.b0 +
           coef.b1 * x1[index] +
@@ -89,29 +90,15 @@ export class RegressionService {
       );
 
       // Calculate R Squared
-      const rSquaredRequirement = exporterPredictions.map(
-        (prediction, index) => {
-          const mean = ySum / exporters.length;
-          const actualValue = y[index];
-          const actualPredictDiff = (actualValue - prediction) ** 2;
-          const actualMeanDiff = (actualValue - mean) ** 2;
-          return [actualPredictDiff, actualMeanDiff];
-        },
-      );
+      const rSquared: number = this.RSquared(exporterPredictions, y, ySum);
 
-      const resultanRSquaredRequirement = rSquaredRequirement.reduce(
-        (acc, array) => {
-          acc[0] += array[0];
-          acc[1] += array[1];
-          return acc;
-        },
-        [0, 0],
-      );
+      // Calculate MAE
+      const MAE: number = this.MAE(exporterPredictions, y);
 
-      const rSquared =
-        1 - resultanRSquaredRequirement[0] / resultanRSquaredRequirement[1];
+      // Calculate RMSE
+      const RMSE: number = this.RMSE(exporterPredictions, y);
 
-      const prediction =
+      const ImporterPrediction: number =
         coef.b0 +
         coef.b1 * importer.quantity_imported +
         coef.b2 * importer.value_imported +
@@ -121,10 +108,11 @@ export class RegressionService {
         id: importer.id,
         hscode: importer.hscode,
         name: importer.name,
-        n: exporters.length,
         yActual: importer.trade_balance,
-        prediction,
+        prediction: ImporterPrediction,
         rSquared,
+        MAE,
+        RMSE,
       };
 
       result.push(object);
@@ -167,8 +155,6 @@ export class RegressionService {
         unit_value: true,
       },
     });
-
-    console.log(exporters);
 
     const y = exporters.map((exporter) => exporter.trade_balance); // Trade Balance
     const x1 = exporters.map((exporter) => exporter.quantity_imported); // Quantity Imported
@@ -216,10 +202,31 @@ export class RegressionService {
       coef.b2 * importer.value_imported +
       coef.b3 * importer.unit_value;
 
+    // const rSquaredRequirement = exporters.map((prediction, index) => {
+    //   const mean = ySum / exporters.length;
+    //   const actualValue = y[index];
+    //   const actualPredictDiff = (actualValue - prediction) ** 2;
+    //   const actualMeanDiff = (actualValue - mean) ** 2;
+    //   return [actualPredictDiff, actualMeanDiff];
+    // });
+
+    // const resultanRSquaredRequirement = rSquaredRequirement.reduce(
+    //   (acc, array) => {
+    //     acc[0] += array[0];
+    //     acc[1] += array[1];
+    //     return acc;
+    //   },
+    //   [0, 0],
+    // );
+
+    // const rSquared =
+    //   1 - resultanRSquaredRequirement[0] / resultanRSquaredRequirement[1];
+
     return {
       message: 'Regression successfully',
       importer,
       exporters,
+      // rSquared,
       result: { importer: importer.name, prediction },
     };
   }
@@ -258,7 +265,22 @@ export class RegressionService {
     return calculateDeterminant(matrix);
   };
 
-  matrixModelling = (values) => {
+  matrixModelling = (values: {
+    n: number;
+    x1Sum: number;
+    x2Sum: number;
+    x3Sum: number;
+    x1x1Sum: number;
+    x1x2Sum: number;
+    x1x3Sum: number;
+    x2x2Sum: number;
+    x2x3Sum: number;
+    x3x3Sum: number;
+    ySum: number;
+    x1ySum: number;
+    x2ySum: number;
+    x3ySum: number;
+  }) => {
     const {
       n,
       x1Sum,
@@ -412,4 +434,36 @@ export class RegressionService {
       x3ySum,
     };
   };
+
+  RSquared = (predictions: number[], y: number[], ySum: number) => {
+    const result = predictions.reduce<[number, number]>(
+      (acc, prediction, index) => {
+        const mean = ySum / predictions.length;
+        const actualValue = y[index];
+        const actualPredictDiff = Math.pow(actualValue - prediction, 2);
+        const actualMeanDiff = Math.pow(actualValue - mean, 2);
+        acc[0] += actualPredictDiff;
+        acc[1] += actualMeanDiff;
+        return acc;
+      },
+      [0, 0],
+    );
+    return 1 - result[0] / result[1];
+  };
+
+  RMSE = (predictions: number[], y: number[]) => {
+    return Math.sqrt(
+      predictions.reduce(
+        (sum: number, prediction: number, index: number) =>
+          sum + Math.pow(prediction - y[index], 2),
+        0,
+      ) / y.length,
+    );
+  };
+
+  MAE = (predictions: number[], y: number[]) =>
+    predictions.reduce(
+      (sum, prediction, index) => sum + Math.abs(prediction - y[index]),
+      0,
+    ) / y.length;
 }
