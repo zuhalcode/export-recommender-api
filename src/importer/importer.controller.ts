@@ -11,6 +11,16 @@ export class ImporterController {
   @Get()
   async findAll(): Promise<WebResponse<ImporterResponse[]>> {
     const importers = await this.importerService.findAll();
+
+    return { data: importers };
+  }
+
+  @Get('/hscode/:hscode')
+  async findByHscode(
+    @Param('hscode') hscode: string,
+  ): Promise<WebResponse<ImporterResponse[]>> {
+    const importers = await this.importerService.findByHscode(hscode);
+
     return { message: 'Importers Retrieved successfully', data: importers };
   }
 

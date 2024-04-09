@@ -4,6 +4,7 @@ import { TrademapService } from './trademap.service';
 import { WebResponse } from 'src/model/web.model';
 import {
   CreateTrademapResponse,
+  GetTrademapResponse,
   ScrapeHscodeResponse,
 } from 'src/model/trademap.model';
 
@@ -57,6 +58,13 @@ export class TrademapController {
   // FIX CONTROLLER
 
   // TESTING CONTROLLER
+
+  @Get()
+  async findAll(): Promise<WebResponse<GetTrademapResponse[]>> {
+    const trademaps = await this.trademapService.findAll();
+
+    return { message: 'Trademap Data Retrieved Successfully', data: trademaps };
+  }
 
   @Post() // OK
   async scrapeAndCreateProduct() {

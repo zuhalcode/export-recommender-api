@@ -4,6 +4,7 @@ import puppeteer, { Page } from 'puppeteer';
 import * as fs from 'fs';
 import { join } from 'path';
 import {
+  GetTrademapResponse,
   ScrapeExporterResponse,
   ScrapeImporterResponse,
 } from 'src/model/trademap.model';
@@ -160,6 +161,14 @@ export class TrademapService {
   // Direct used function
 
   // CRUD
+
+  async findAll(): Promise<GetTrademapResponse[]> {
+    const trademaps = await this.databaseService.trademap.findMany({
+      select: { hscode: true, name: true },
+    });
+
+    return trademaps;
+  }
 
   async create(scrapedData: any[]) {
     // Extract hscode values from the scraped data

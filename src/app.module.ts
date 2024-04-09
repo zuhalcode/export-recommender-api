@@ -6,10 +6,15 @@ import { ProductModule } from './product/product.module';
 import { ImporterController } from './importer/importer.controller';
 import { ImporterService } from './importer/importer.service';
 import { ImporterModule } from './importer/importer.module';
-import { ImporterModule } from './importer/importer.module';
 
 @Module({
-  imports: [TrademapModule, RegressionModule, CommonModule, ProductModule, ImporterModule],
+  imports: [
+    TrademapModule,
+    RegressionModule,
+    CommonModule,
+    ProductModule,
+    ImporterModule,
+  ],
   controllers: [ImporterController],
   providers: [ImporterService],
 })

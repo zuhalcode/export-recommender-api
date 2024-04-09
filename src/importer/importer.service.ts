@@ -2,7 +2,6 @@
 import { Injectable } from '@nestjs/common';
 import { DatabaseService } from 'src/common/database.service';
 import { ImporterResponse } from 'src/model/importer.model';
-import { WebResponse } from 'src/model/web.model';
 
 @Injectable()
 export class ImporterService {
@@ -10,7 +9,19 @@ export class ImporterService {
 
   async findAll(): Promise<ImporterResponse[]> {
     const importers = await this.databaseService.importers.findMany({
+      where: { trade_balance: { not: undefined } },
       select: { id: true, name: true, hscode: true },
+      take: 100,
+    });
+
+    return importers;
+  }
+
+  async findByHscode(hscode: string): Promise<ImporterResponse[]> {
+    const importers = await this.databaseService.importers.findMany({
+      where: { hscode },
+      select: { id: true, name: true, hscode: true },
+      take: 100,
     });
 
     return importers;

@@ -34,3 +34,9 @@ export class ScrapeExporterResponse {
   value_imported: string;
   unit_value: string;
 }
+
+export class GetTrademapResponse {
+  hscode: string;
+  name: string;
+  link?: string;
+}
