@@ -6,9 +6,9 @@ import { DatabaseService } from 'src/common/database.service';
 export class RegressionService {
   constructor(private readonly databaseService: DatabaseService) {}
 
-  async multipleLinearRegression() {
+  async multipleLinearRegression(hscode: string, sort: string = 'y') {
     const importers = await this.databaseService.importers.findMany({
-      where: { hscode: '0301' },
+      where: { hscode },
       select: {
         id: true,
         hscode: true,
@@ -17,6 +17,7 @@ export class RegressionService {
         quantity_imported: true,
         value_imported: true,
         unit_value: true,
+        quantity_unit: true,
       },
     });
 
@@ -108,8 +109,12 @@ export class RegressionService {
         id: importer.id,
         hscode: importer.hscode,
         name: importer.name,
-        yActual: importer.trade_balance,
+        trade_balance: importer.trade_balance,
         prediction: ImporterPrediction,
+        quantity_imported: importer.quantity_imported,
+        value_imported: importer.value_imported,
+        unit_value: importer.unit_value,
+        quantity_unit: importer.quantity_unit,
         rSquared,
         MAE,
         RMSE,
@@ -118,9 +123,15 @@ export class RegressionService {
       result.push(object);
     }
 
-    result.sort(
-      (a, b) => (a.prediction || Infinity) - (b.prediction || Infinity),
-    );
+    if (sort === 'y') {
+      result.sort(
+        (a, b) => (a.prediction || Infinity) - (b.prediction || Infinity),
+      );
+    } else if (sort === 'r') {
+      result.sort(
+        (a, b) => (b.rSquared || -Infinity) - (a.rSquared || -Infinity),
+      );
+    }
 
     return {
       message: 'Regression successfully',

@@ -170,6 +170,15 @@ export class TrademapService {
     return trademaps;
   }
 
+  async findOne(hscode: string): Promise<GetTrademapResponse> {
+    const trademap = await this.databaseService.trademap.findFirstOrThrow({
+      where: { hscode },
+      select: { hscode: true, name: true },
+    });
+
+    return trademap;
+  }
+
   async create(scrapedData: any[]) {
     // Extract hscode values from the scraped data
     const hscodeValues = scrapedData.map((item) => item.hscode);

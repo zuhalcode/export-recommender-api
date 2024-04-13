@@ -10,7 +10,6 @@ export class ImporterService {
   async findAll(): Promise<ImporterResponse[]> {
     const importers = await this.databaseService.importers.findMany({
       where: { trade_balance: { not: undefined } },
-      select: { id: true, name: true, hscode: true },
       take: 100,
     });
 
@@ -20,7 +19,7 @@ export class ImporterService {
   async findByHscode(hscode: string): Promise<ImporterResponse[]> {
     const importers = await this.databaseService.importers.findMany({
       where: { hscode },
-      select: { id: true, name: true, hscode: true },
+      orderBy: { trade_balance: 'desc' },
       take: 100,
     });
 

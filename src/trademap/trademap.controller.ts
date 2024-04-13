@@ -1,5 +1,5 @@
 /* eslint-disable prettier/prettier */
-import { Controller, Get, Post } from '@nestjs/common';
+import { Controller, Get, Param, Post } from '@nestjs/common';
 import { TrademapService } from './trademap.service';
 import { WebResponse } from 'src/model/web.model';
 import {
@@ -64,6 +64,14 @@ export class TrademapController {
     const trademaps = await this.trademapService.findAll();
 
     return { message: 'Trademap Data Retrieved Successfully', data: trademaps };
+  }
+
+  @Get(':hscode')
+  async findOne(
+    @Param('hscode') hscode: string,
+  ): Promise<WebResponse<GetTrademapResponse>> {
+    const trademap = await this.trademapService.findOne(hscode);
+    return { message: 'Trademap Data Retrieved Successfully', data: trademap };
   }
 
   @Post() // OK
