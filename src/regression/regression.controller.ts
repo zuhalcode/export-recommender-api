@@ -6,6 +6,13 @@ import { RegressionService } from './regression.service';
 export class RegressionController {
   constructor(private readonly regressionService: RegressionService) {}
 
+  @Get()
+  async getRsquaredAll() {
+    const data = await this.regressionService.getCalculate();
+
+    return { data };
+  }
+
   @Get(':hscode/:sort')
   async multipleLinearRegression(
     @Param('hscode') hscode: string,

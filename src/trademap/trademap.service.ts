@@ -400,15 +400,6 @@ export class TrademapService {
         await page.goto(link, { waitUntil: 'domcontentloaded' });
         console.log(`scraping hscode ${hscode}`);
 
-        // Use page.select() to select the option "300 per page"
-        // await page.select(
-        //   'select[name="ctl00$PageContent$GridViewPanelControl$DropDownList_PageSize"]',
-        //   '300',
-        // );
-
-        // Wait for navigation to complete
-        // await page.waitForNavigation();
-
         await page.select(
           'select[name="ctl00$PageContent$GridViewPanelControl$DropDownList_PageSize"]',
           '300',

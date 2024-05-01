@@ -2,9 +2,255 @@
 import { Injectable } from '@nestjs/common';
 import { DatabaseService } from 'src/common/database.service';
 
+import * as fs from 'fs';
+import * as path from 'path';
+
 @Injectable()
 export class RegressionService {
   constructor(private readonly databaseService: DatabaseService) {}
+
+  async getCalculate() {
+    const testingData = this.readJSON();
+
+    const finalRSquared =
+      testingData
+        .map((data) => Math.abs(data.avgRSquared))
+        .filter((value) => !isNaN(value))
+        .reduce((total, value) => total + value, 0) /
+      testingData
+        .map((data) => Math.abs(data.avgRSquared))
+        .filter((value) => !isNaN(value)).length;
+
+    const finalMAE =
+      testingData
+        .map((data) => data.avgMAE)
+        .filter((value) => !isNaN(value))
+        .reduce((total, value) => total + value, 0) /
+      testingData.map((data) => data.avgMAE).filter((value) => !isNaN(value))
+        .length;
+
+    const finalRMSE =
+      testingData
+        .map((data) => data.avgRMSE)
+        .filter((value) => !isNaN(value))
+        .reduce((total, value) => total + value, 0) /
+      testingData.map((data) => data.avgRMSE).filter((value) => !isNaN(value))
+        .length;
+
+    const finalWeightedMAE =
+      testingData.reduce(
+        (total, data) => total + data.avgMAE * testingData.length,
+        0,
+      ) / testingData.length;
+
+    const finalWeightedRMSE =
+      testingData.reduce(
+        (total, data) => total + data.avgRMSE * testingData.length,
+        0,
+      ) / testingData.length;
+
+    const finalResult = {
+      finalRSquared,
+      finalMAE,
+      finalRMSE,
+      finalWeightedMAE,
+      finalWeightedRMSE,
+    };
+
+    return {
+      message: 'Regression successfully',
+      finalResult,
+    };
+  }
+
+  async getRsquaredAll() {
+    // const allHscodes = (
+    //   await this.databaseService.trademap.findMany({ select: { hscode: true } })
+    // ).map((data) => data.hscode);
+
+    const currentHscode = '24';
+    const importers = await this.databaseService.importers.findMany({
+      where: {
+        hscode: {
+          in: ['2401', '2402', '2403', '2404'],
+        },
+      },
+      select: {
+        id: true,
+        hscode: true,
+        name: true,
+        trade_balance: true,
+        quantity_imported: true,
+        value_imported: true,
+        unit_value: true,
+        quantity_unit: true,
+      },
+    });
+
+    const result = [];
+
+    for (const importer of importers) {
+      console.log('importer ke-', result.length);
+      const exporters = await this.databaseService.exporters.findMany({
+        where: {
+          importer_id: importer.id,
+          trade_balance: { not: 0 },
+        },
+        select: {
+          name: true,
+          trade_balance: true,
+          quantity_imported: true,
+          value_imported: true,
+          unit_value: true,
+        },
+      });
+
+      const y: number[] = exporters.map((exporter) => exporter.trade_balance); // Trade Balance
+
+      const x1: number[] = exporters.map(
+        (exporter) => exporter.quantity_imported,
+      ); // Quantity Imported
+      const x2: number[] = exporters.map((exporter) => exporter.value_imported); // Value Imported
+      const x3: number[] = exporters.map((exporter) => exporter.unit_value); // Unit Value
+
+      const {
+        x1Sum,
+        x2Sum,
+        x3Sum,
+        x1x1Sum,
+        x1x2Sum,
+        x1x3Sum,
+        x2x2Sum,
+        x2x3Sum,
+        x3x3Sum,
+        ySum,
+        x1ySum,
+        x2ySum,
+        x3ySum,
+      } = this.sumingValues(y, x1, x2, x3);
+
+      const matrixValues = {
+        n: y.length,
+        x1Sum,
+        x2Sum,
+        x3Sum,
+        x1x1Sum,
+        x1x2Sum,
+        x1x3Sum,
+        x2x2Sum,
+        x2x3Sum,
+        x3x3Sum,
+        ySum,
+        x1ySum,
+        x2ySum,
+        x3ySum,
+      };
+
+      const coef: { b0: number; b1: number; b2: number; b3: number } =
+        this.matrixModelling(matrixValues);
+
+      const exporterPredictions: number[] = exporters.map(
+        (_, index) =>
+          coef.b0 +
+          coef.b1 * x1[index] +
+          coef.b2 * x2[index] +
+          coef.b3 * x3[index],
+      );
+
+      // Calculate R Squared
+      const rSquared: number = this.RSquared(exporterPredictions, y, ySum);
+
+      // Calculate MAE
+      const MAE: number = this.MAE(exporterPredictions, y);
+
+      // Calculate RMSE
+      const RMSE: number = this.RMSE(exporterPredictions, y);
+
+      const ImporterPrediction: number =
+        coef.b0 +
+        coef.b1 * importer.quantity_imported +
+        coef.b2 * importer.value_imported +
+        coef.b3 * importer.unit_value;
+
+      const object = {
+        n: exporters.length,
+        id: importer.id,
+        hscode: importer.hscode,
+        name: importer.name,
+        trade_balance: importer.trade_balance,
+        prediction: ImporterPrediction,
+        quantity_imported: importer.quantity_imported,
+        value_imported: importer.value_imported,
+        unit_value: importer.unit_value,
+        quantity_unit: importer.quantity_unit,
+        rSquared,
+        MAE,
+        RMSE,
+      };
+
+      result.push(object);
+    }
+
+    const avgRSquared =
+      result
+        .map((data) => data.rSquared)
+        .filter((value) => !isNaN(value))
+        .reduce((total, value) => total + value, 0) /
+      result.map((data) => data.rSquared).filter((value) => !isNaN(value))
+        .length;
+
+    const avgMAE =
+      result
+        .map((data) => data.MAE)
+        .filter((value) => !isNaN(value))
+        .reduce((total, value) => total + value, 0) /
+      result.map((data) => data.MAE).filter((value) => !isNaN(value)).length;
+
+    const avgRMSE =
+      result
+        .map((data) => data.RMSE)
+        .filter((value) => !isNaN(value))
+        .reduce((total, value) => total + value, 0) /
+      result.map((data) => data.RMSE).filter((value) => !isNaN(value)).length;
+
+    const weightedRawDataMAE = result
+      .map((data) => {
+        return { MAE: data.MAE, n: data.n };
+      })
+      .filter((value) => !isNaN(value.MAE));
+
+    const weightedRawDataRMSE = result
+      .map((data) => {
+        return { RMSE: data.RMSE, n: data.n };
+      })
+      .filter((value) => !isNaN(value.RMSE));
+
+    const weightedMAE =
+      weightedRawDataMAE.reduce((total, data) => total + data.MAE * data.n, 0) /
+      weightedRawDataMAE.reduce((total, data) => total + data.n, 0);
+
+    const weightedRMSE =
+      weightedRawDataRMSE.reduce(
+        (total, data) => total + data.RMSE * data.n,
+        0,
+      ) / weightedRawDataRMSE.reduce((total, data) => total + data.n, 0);
+
+    const testResult = {
+      hscode: currentHscode,
+      avgRSquared,
+      avgMAE,
+      weightedMAE,
+      avgRMSE,
+      weightedRMSE,
+    };
+
+    this.writeJSON(testResult);
+
+    return {
+      message: 'Regression successfully',
+      result,
+    };
+  }
 
   async multipleLinearRegression(hscode: string, sort: string = 'y') {
     const importers = await this.databaseService.importers.findMany({
@@ -477,4 +723,39 @@ export class RegressionService {
       (sum, prediction, index) => sum + Math.abs(prediction - y[index]),
       0,
     ) / y.length;
+
+  writeJSON = (result) => {
+    const __dirname = path.join(process.cwd(), 'src', 'data');
+    const filePath = path.join(__dirname, 'testing-result.json');
+
+    let existingData = [];
+
+    if (fs.existsSync(filePath)) {
+      // Read and parse the existing JSON file
+      const fileContent = fs.readFileSync(filePath, 'utf-8');
+      existingData = JSON.parse(fileContent);
+    }
+
+    // Append new data to the existing array
+    if (Array.isArray(existingData)) {
+      existingData.push(result);
+    } else {
+      existingData = [result]; // If not an array, convert it to an array
+    }
+
+    // Write the updated data back to the file
+    fs.writeFileSync(filePath, JSON.stringify(existingData, null, 2), 'utf-8');
+  };
+
+  readJSON = () => {
+    const __dirname = path.join(process.cwd(), 'src', 'data');
+    const filePath = path.join(__dirname, 'testing-result.json');
+
+    if (fs.existsSync(filePath)) {
+      const fileContent = fs.readFileSync(filePath, 'utf-8');
+      return JSON.parse(fileContent);
+    } else {
+      return []; // Return an empty array if the file doesn't exist
+    }
+  };
 }

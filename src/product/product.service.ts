@@ -31,7 +31,7 @@ export class ProductService {
         where: { hscode },
         select: { id: true, hscode: true, name: true, desc: true },
       });
-
+      console.log(products);
       return products;
     } catch (error) {
       console.log(error);
