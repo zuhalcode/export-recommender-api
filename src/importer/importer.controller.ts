@@ -23,9 +23,4 @@ export class ImporterController {
 
     return { message: 'Importers Retrieved successfully', data: importers };
   }
-
-  @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.importerService.findOne(+id);
-  }
 }

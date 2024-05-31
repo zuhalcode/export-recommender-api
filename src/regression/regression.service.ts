@@ -4,487 +4,426 @@ import { DatabaseService } from 'src/common/database.service';
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { prod } from 'mathjs';
 
 @Injectable()
 export class RegressionService {
   constructor(private readonly databaseService: DatabaseService) {}
 
-  async getCalculate() {
-    const testingData = this.readJSON();
+  async multipleLinearRegression(hscode: string) {
+    const importers = await this.databaseService.importers.findMany({
+      where: { hscode },
+    });
 
-    const finalRSquared =
-      testingData
-        .map((data) => Math.abs(data.avgRSquared))
-        .filter((value) => !isNaN(value))
-        .reduce((total, value) => total + value, 0) /
-      testingData
-        .map((data) => Math.abs(data.avgRSquared))
-        .filter((value) => !isNaN(value)).length;
+    const negativeResult = [];
+    const positiveResult = [];
 
-    const finalMAE =
-      testingData
-        .map((data) => data.avgMAE)
-        .filter((value) => !isNaN(value))
-        .reduce((total, value) => total + value, 0) /
-      testingData.map((data) => data.avgMAE).filter((value) => !isNaN(value))
-        .length;
+    for (const importer of importers) {
+      const exporters = await this.databaseService.exporters.findMany({
+        where: {
+          importer_id: importer.id,
+          trade_balance: { not: 0 },
+        },
+        select: {
+          name: true,
+          trade_balance: true,
+          quantity_imported: true,
+          value_imported: true,
+          unit_value: true,
+        },
+      });
 
-    const finalRMSE =
-      testingData
-        .map((data) => data.avgRMSE)
-        .filter((value) => !isNaN(value))
-        .reduce((total, value) => total + value, 0) /
-      testingData.map((data) => data.avgRMSE).filter((value) => !isNaN(value))
-        .length;
+      const y: number[] = exporters.map((exporter) => exporter.trade_balance); // Trade Balance
 
-    const finalWeightedMAE =
-      testingData.reduce(
-        (total, data) => total + data.avgMAE * testingData.length,
-        0,
-      ) / testingData.length;
+      const x1: number[] = exporters.map(
+        (exporter) => exporter.quantity_imported,
+      ); // Quantity Imported
 
-    const finalWeightedRMSE =
-      testingData.reduce(
-        (total, data) => total + data.avgRMSE * testingData.length,
-        0,
-      ) / testingData.length;
+      const x2: number[] = exporters.map((exporter) => exporter.value_imported); // Value Imported
+      const x3: number[] = exporters.map((exporter) => exporter.unit_value); // Unit Value
 
-    const finalResult = {
-      finalRSquared,
-      finalMAE,
-      finalRMSE,
-      finalWeightedMAE,
-      finalWeightedRMSE,
-    };
+      const { ySum, ...sums } = this.sumingValues(y, x1, x2, x3);
+
+      const matrixValues = {
+        n: y.length,
+        ySum,
+        ...sums,
+      };
+
+      const coef: {
+        b0: number;
+        b1: number;
+        b2: number;
+        b3: number;
+      } = this.matrixModelling(matrixValues);
+
+      const exporterPredictions: number[] = exporters.map(
+        (_, index) =>
+          coef.b0 +
+          coef.b1 * x1[index] +
+          coef.b2 * x2[index] +
+          coef.b3 * x3[index],
+      );
+
+      // Calculate R Squared
+      const rSquared: number = this.RSquared(exporterPredictions, y, ySum);
+
+      // Calculate MAE
+      const MAE: number = this.MAE(exporterPredictions, y);
+
+      // Calculate RMSE
+      const RMSE: number = this.RMSE(exporterPredictions, y);
+
+      const ImporterPrediction: number =
+        coef.b0 +
+        coef.b1 * importer.quantity_imported +
+        coef.b2 * importer.value_imported +
+        coef.b3 * importer.unit_value;
+
+      if (!isNaN(ImporterPrediction)) {
+        const object = {
+          n: exporters.length,
+          id: importer.id,
+          hscode: importer.hscode,
+          name: importer.name,
+          trade_balance: importer.trade_balance,
+          quantity_imported: importer.quantity_imported,
+          value_imported: importer.value_imported,
+          unit_value: importer.unit_value,
+          quantity_unit: importer.quantity_unit,
+          coef,
+          prediction: ImporterPrediction,
+          rSquared,
+          MAE,
+          RMSE,
+        };
+
+        if (object.rSquared > 0.5) {
+          if (object.prediction < 0) negativeResult.push(object);
+          else positiveResult.push(object);
+        }
+      }
+    }
+
+    // Sorting untuk nilai prediksi < 0: terkecil ke terbesar, kemudian R Squared terbesar ke terkecil
+    negativeResult.sort((a, b) => b.rSquared - a.rSquared);
+
+    // Sorting untuk nilai prediksi > 0: terbesar ke terkecil, kemudian R Squared terbesar ke terkecil
+    positiveResult.sort((a, b) => b.rSquared - a.rSquared);
+
+    const result = [...negativeResult, ...positiveResult];
 
     return {
       message: 'Regression successfully',
+      result,
+    };
+  }
+
+  async getFinalAccuracy() {
+    const testingData = this.readJSON('accuracy-4digit.json').map(
+      (data) => data.hscode,
+    );
+
+    const hscodes = [];
+
+    for (const hscode of testingData) {
+      const products = await this.databaseService.products.findMany({
+        where: { hscode },
+      });
+
+      if (products.length === 0) hscodes.push(hscode);
+    }
+
+    return { hscodes };
+    const RSquared =
+      testingData
+        .map((data) => Math.abs(data.RSquared))
+        .filter((value) => !isNaN(value))
+        .reduce((total, value) => total + value, 0) /
+      testingData
+        .map((data) => Math.abs(data.RSquared))
+        .filter((value) => !isNaN(value)).length;
+
+    const MAE =
+      testingData
+        .map((data) => data.MAE)
+        .filter((value) => !isNaN(value))
+        .reduce((total, value) => total + value, 0) /
+      testingData.map((data) => data.MAE).filter((value) => !isNaN(value))
+        .length;
+
+    const RMSE =
+      testingData
+        .map((data) => data.RMSE)
+        .filter((value) => !isNaN(value))
+        .reduce((total, value) => total + value, 0) /
+      testingData.map((data) => data.RMSE).filter((value) => !isNaN(value))
+        .length;
+
+    const finalResult = {
+      RSquared,
+      MAE,
+      RMSE,
+    };
+
+    return {
+      message: 'Testing Accuracy successfully',
       finalResult,
     };
   }
 
-  async getRsquaredAll() {
-    // const allHscodes = (
-    //   await this.databaseService.trademap.findMany({ select: { hscode: true } })
-    // ).map((data) => data.hscode);
+  async calculate2Digit() {
+    const testingData = this.readJSON('accuracy-4digit.json');
 
-    const currentHscode = '24';
-    const importers = await this.databaseService.importers.findMany({
-      where: {
-        hscode: {
-          in: ['2401', '2402', '2403', '2404'],
-        },
-      },
-      select: {
-        id: true,
-        hscode: true,
-        name: true,
-        trade_balance: true,
-        quantity_imported: true,
-        value_imported: true,
-        unit_value: true,
-        quantity_unit: true,
-      },
-    });
+    const hscodes = [
+      '03',
+      '04',
+      '05',
+      '06',
+      '07',
+      '08',
+      '09',
+      '10',
+      '14',
+      '15',
+      '16',
+      '17',
+      '18',
+      '19',
+      '20',
+      '21',
+      '22',
+      '23',
+      '34',
+      '38',
+      '40',
+      '42',
+      '61',
+      '62',
+      '64',
+      '67',
+      '94',
+    ];
 
-    const result = [];
+    const finalResult = [];
 
-    for (const importer of importers) {
-      console.log('importer ke-', result.length);
-      const exporters = await this.databaseService.exporters.findMany({
-        where: {
-          importer_id: importer.id,
-          trade_balance: { not: 0 },
-        },
+    for (const hscode of hscodes) {
+      const filteredData = testingData.filter((item) =>
+        item.hscode.startsWith(hscode),
+      );
+
+      const RSquared =
+        filteredData
+          .map((data) => data.RSquared)
+          .reduce((total, value) => total + value, 0) / filteredData.length;
+
+      const MAE =
+        filteredData
+          .map((data) => data.MAE)
+          .reduce((total, value) => total + value, 0) / filteredData.length;
+
+      const RMSE =
+        filteredData
+          .map((data) => data.RMSE)
+          .filter((value) => !isNaN(value))
+          .reduce((total, value) => total + value, 0) / filteredData.length;
+
+      const object = {
+        hscode,
+        RSquared,
+        MAE,
+        RMSE,
+      };
+
+      finalResult.push({ object });
+
+      this.writeJSON(object, 'accuracy-2digit.json');
+    }
+
+    return {
+      message: 'Calculate successfully',
+      finalResult,
+    };
+  }
+
+  async calculate4Digit() {
+    const hscodes = this.readJSON('scrapedHscode.json').map(
+      (data) => data.hscode,
+    );
+
+    // const importers = this.readJSON('raw-importers.json').length;
+    // const cleanImporters = this.readJSON('clean-importers.json').length;
+    // const exporter = this.readJSON('raw-exporters.json').length;
+    // const cleanExporters = this.readJSON('clean-exporters.json').length;
+
+    // return {
+    //   importers,
+    //   cleanImporters,
+    //   exporter,
+    //   cleanExporters,
+    // };
+
+    const finalResult = [];
+
+    for (const hscode of hscodes) {
+      console.log(`Calculate hscode ${hscode}`);
+      const importers = await this.databaseService.importers.findMany({
+        where: { hscode },
         select: {
+          id: true,
+          hscode: true,
           name: true,
           trade_balance: true,
           quantity_imported: true,
           value_imported: true,
           unit_value: true,
+          quantity_unit: true,
         },
       });
 
-      const y: number[] = exporters.map((exporter) => exporter.trade_balance); // Trade Balance
+      const result = [];
 
-      const x1: number[] = exporters.map(
-        (exporter) => exporter.quantity_imported,
-      ); // Quantity Imported
-      const x2: number[] = exporters.map((exporter) => exporter.value_imported); // Value Imported
-      const x3: number[] = exporters.map((exporter) => exporter.unit_value); // Unit Value
+      for (const importer of importers) {
+        const exporters = await this.databaseService.exporters.findMany({
+          where: {
+            importer_id: importer.id,
+            trade_balance: { not: 0 },
+          },
+          select: {
+            name: true,
+            trade_balance: true,
+            quantity_imported: true,
+            value_imported: true,
+            unit_value: true,
+          },
+        });
 
-      const {
-        x1Sum,
-        x2Sum,
-        x3Sum,
-        x1x1Sum,
-        x1x2Sum,
-        x1x3Sum,
-        x2x2Sum,
-        x2x3Sum,
-        x3x3Sum,
-        ySum,
-        x1ySum,
-        x2ySum,
-        x3ySum,
-      } = this.sumingValues(y, x1, x2, x3);
+        const y: number[] = exporters.map((exporter) => exporter.trade_balance); // Trade Balance
 
-      const matrixValues = {
-        n: y.length,
-        x1Sum,
-        x2Sum,
-        x3Sum,
-        x1x1Sum,
-        x1x2Sum,
-        x1x3Sum,
-        x2x2Sum,
-        x2x3Sum,
-        x3x3Sum,
-        ySum,
-        x1ySum,
-        x2ySum,
-        x3ySum,
-      };
+        const x1: number[] = exporters.map(
+          (exporter) => exporter.quantity_imported,
+        ); // Quantity Imported
 
-      const coef: { b0: number; b1: number; b2: number; b3: number } =
-        this.matrixModelling(matrixValues);
+        const x2: number[] = exporters.map(
+          (exporter) => exporter.value_imported,
+        ); // Value Imported
 
-      const exporterPredictions: number[] = exporters.map(
-        (_, index) =>
+        const x3: number[] = exporters.map((exporter) => exporter.unit_value); // Unit Value
+
+        const {
+          x1Sum,
+          x2Sum,
+          x3Sum,
+          x1x1Sum,
+          x1x2Sum,
+          x1x3Sum,
+          x2x2Sum,
+          x2x3Sum,
+          x3x3Sum,
+          ySum,
+          x1ySum,
+          x2ySum,
+          x3ySum,
+        } = this.sumingValues(y, x1, x2, x3);
+
+        const matrixValues = {
+          n: y.length,
+          x1Sum,
+          x2Sum,
+          x3Sum,
+          x1x1Sum,
+          x1x2Sum,
+          x1x3Sum,
+          x2x2Sum,
+          x2x3Sum,
+          x3x3Sum,
+          ySum,
+          x1ySum,
+          x2ySum,
+          x3ySum,
+        };
+
+        const coef: { b0: number; b1: number; b2: number; b3: number } =
+          this.matrixModelling(matrixValues);
+
+        const exporterPredictions: number[] = exporters.map(
+          (_, index) =>
+            coef.b0 +
+            coef.b1 * x1[index] +
+            coef.b2 * x2[index] +
+            coef.b3 * x3[index],
+        );
+
+        // Calculate R Squared
+        const rSquared: number = this.RSquared(exporterPredictions, y, ySum);
+
+        // Calculate MAE
+        const MAE: number = this.MAE(exporterPredictions, y);
+
+        // Calculate RMSE
+        const RMSE: number = this.RMSE(exporterPredictions, y);
+
+        const importerPrediction: number =
           coef.b0 +
-          coef.b1 * x1[index] +
-          coef.b2 * x2[index] +
-          coef.b3 * x3[index],
-      );
+          coef.b1 * importer.quantity_imported +
+          coef.b2 * importer.value_imported +
+          coef.b3 * importer.unit_value;
 
-      // Calculate R Squared
-      const rSquared: number = this.RSquared(exporterPredictions, y, ySum);
+        if (!isNaN(importerPrediction)) {
+          const object = {
+            n: exporters.length,
+            hscode: importer.hscode,
+            name: importer.name,
+            trade_balance: importer.trade_balance,
+            prediction: importerPrediction,
+            rSquared,
+            MAE,
+            RMSE,
+          };
 
-      // Calculate MAE
-      const MAE: number = this.MAE(exporterPredictions, y);
+          result.push(object);
+        }
+      }
 
-      // Calculate RMSE
-      const RMSE: number = this.RMSE(exporterPredictions, y);
+      const avgRSquared =
+        result
+          .map((data) => data.rSquared)
+          .filter((value) => !isNaN(value))
+          .reduce((total, value) => total + value, 0) /
+        result.map((data) => data.rSquared).filter((value) => !isNaN(value))
+          .length;
 
-      const ImporterPrediction: number =
-        coef.b0 +
-        coef.b1 * importer.quantity_imported +
-        coef.b2 * importer.value_imported +
-        coef.b3 * importer.unit_value;
+      const avgMAE =
+        result
+          .map((data) => data.MAE)
+          .filter((value) => !isNaN(value))
+          .reduce((total, value) => total + value, 0) /
+        result.map((data) => data.MAE).filter((value) => !isNaN(value)).length;
 
-      const object = {
-        n: exporters.length,
-        id: importer.id,
-        hscode: importer.hscode,
-        name: importer.name,
-        trade_balance: importer.trade_balance,
-        prediction: ImporterPrediction,
-        quantity_imported: importer.quantity_imported,
-        value_imported: importer.value_imported,
-        unit_value: importer.unit_value,
-        quantity_unit: importer.quantity_unit,
-        rSquared,
-        MAE,
-        RMSE,
-      };
+      const avgRMSE =
+        result
+          .map((data) => data.RMSE)
+          .filter((value) => !isNaN(value))
+          .reduce((total, value) => total + value, 0) /
+        result.map((data) => data.RMSE).filter((value) => !isNaN(value)).length;
 
-      result.push(object);
-    }
+      if (!isNaN(avgRSquared)) {
+        const result4Digit = {
+          hscode,
+          RSquared: avgRSquared,
+          MAE: avgMAE,
+          RMSE: avgRMSE,
+        };
 
-    const avgRSquared =
-      result
-        .map((data) => data.rSquared)
-        .filter((value) => !isNaN(value))
-        .reduce((total, value) => total + value, 0) /
-      result.map((data) => data.rSquared).filter((value) => !isNaN(value))
-        .length;
+        // this.writeJSON(result4Digit, 'accuracy-new-4digit.json');
 
-    const avgMAE =
-      result
-        .map((data) => data.MAE)
-        .filter((value) => !isNaN(value))
-        .reduce((total, value) => total + value, 0) /
-      result.map((data) => data.MAE).filter((value) => !isNaN(value)).length;
-
-    const avgRMSE =
-      result
-        .map((data) => data.RMSE)
-        .filter((value) => !isNaN(value))
-        .reduce((total, value) => total + value, 0) /
-      result.map((data) => data.RMSE).filter((value) => !isNaN(value)).length;
-
-    const weightedRawDataMAE = result
-      .map((data) => {
-        return { MAE: data.MAE, n: data.n };
-      })
-      .filter((value) => !isNaN(value.MAE));
-
-    const weightedRawDataRMSE = result
-      .map((data) => {
-        return { RMSE: data.RMSE, n: data.n };
-      })
-      .filter((value) => !isNaN(value.RMSE));
-
-    const weightedMAE =
-      weightedRawDataMAE.reduce((total, data) => total + data.MAE * data.n, 0) /
-      weightedRawDataMAE.reduce((total, data) => total + data.n, 0);
-
-    const weightedRMSE =
-      weightedRawDataRMSE.reduce(
-        (total, data) => total + data.RMSE * data.n,
-        0,
-      ) / weightedRawDataRMSE.reduce((total, data) => total + data.n, 0);
-
-    const testResult = {
-      hscode: currentHscode,
-      avgRSquared,
-      avgMAE,
-      weightedMAE,
-      avgRMSE,
-      weightedRMSE,
-    };
-
-    this.writeJSON(testResult);
-
-    return {
-      message: 'Regression successfully',
-      result,
-    };
-  }
-
-  async multipleLinearRegression(hscode: string, sort: string = 'y') {
-    const importers = await this.databaseService.importers.findMany({
-      where: { hscode },
-      select: {
-        id: true,
-        hscode: true,
-        name: true,
-        trade_balance: true,
-        quantity_imported: true,
-        value_imported: true,
-        unit_value: true,
-        quantity_unit: true,
-      },
-    });
-
-    const result = [];
-
-    for (const importer of importers) {
-      const exporters = await this.databaseService.exporters.findMany({
-        where: {
-          importer_id: importer.id,
-          trade_balance: { not: 0 },
-        },
-        select: {
-          name: true,
-          trade_balance: true,
-          quantity_imported: true,
-          value_imported: true,
-          unit_value: true,
-        },
-      });
-
-      const y: number[] = exporters.map((exporter) => exporter.trade_balance); // Trade Balance
-
-      const x1: number[] = exporters.map(
-        (exporter) => exporter.quantity_imported,
-      ); // Quantity Imported
-      const x2: number[] = exporters.map((exporter) => exporter.value_imported); // Value Imported
-      const x3: number[] = exporters.map((exporter) => exporter.unit_value); // Unit Value
-
-      const {
-        x1Sum,
-        x2Sum,
-        x3Sum,
-        x1x1Sum,
-        x1x2Sum,
-        x1x3Sum,
-        x2x2Sum,
-        x2x3Sum,
-        x3x3Sum,
-        ySum,
-        x1ySum,
-        x2ySum,
-        x3ySum,
-      } = this.sumingValues(y, x1, x2, x3);
-
-      const matrixValues = {
-        n: y.length,
-        x1Sum,
-        x2Sum,
-        x3Sum,
-        x1x1Sum,
-        x1x2Sum,
-        x1x3Sum,
-        x2x2Sum,
-        x2x3Sum,
-        x3x3Sum,
-        ySum,
-        x1ySum,
-        x2ySum,
-        x3ySum,
-      };
-
-      const coef: { b0: number; b1: number; b2: number; b3: number } =
-        this.matrixModelling(matrixValues);
-
-      const exporterPredictions: number[] = exporters.map(
-        (_, index) =>
-          coef.b0 +
-          coef.b1 * x1[index] +
-          coef.b2 * x2[index] +
-          coef.b3 * x3[index],
-      );
-
-      // Calculate R Squared
-      const rSquared: number = this.RSquared(exporterPredictions, y, ySum);
-
-      // Calculate MAE
-      const MAE: number = this.MAE(exporterPredictions, y);
-
-      // Calculate RMSE
-      const RMSE: number = this.RMSE(exporterPredictions, y);
-
-      const ImporterPrediction: number =
-        coef.b0 +
-        coef.b1 * importer.quantity_imported +
-        coef.b2 * importer.value_imported +
-        coef.b3 * importer.unit_value;
-
-      const object = {
-        id: importer.id,
-        hscode: importer.hscode,
-        name: importer.name,
-        trade_balance: importer.trade_balance,
-        prediction: ImporterPrediction,
-        quantity_imported: importer.quantity_imported,
-        value_imported: importer.value_imported,
-        unit_value: importer.unit_value,
-        quantity_unit: importer.quantity_unit,
-        rSquared,
-        MAE,
-        RMSE,
-      };
-
-      result.push(object);
-    }
-
-    if (sort === 'y') {
-      result.sort(
-        (a, b) => (a.prediction || Infinity) - (b.prediction || Infinity),
-      );
-    } else if (sort === 'r') {
-      result.sort(
-        (a, b) => (b.rSquared || -Infinity) - (a.rSquared || -Infinity),
-      );
+        finalResult.push({ result4Digit });
+      }
     }
 
     return {
-      message: 'Regression successfully',
-      result,
-    };
-  }
-
-  async linearRegression() {
-    const importer = await this.databaseService.importers.findFirst({
-      where: { hscode: '0301', id: 10 },
-      select: {
-        id: true,
-        hscode: true,
-        name: true,
-        trade_balance: true,
-        quantity_imported: true,
-        value_imported: true,
-        unit_value: true,
-      },
-    });
-
-    const exporters = await this.databaseService.exporters.findMany({
-      where: {
-        importer_id: importer.id,
-        trade_balance: { not: 0 },
-      },
-      select: {
-        name: true,
-        trade_balance: true,
-        quantity_imported: true,
-        value_imported: true,
-        unit_value: true,
-      },
-    });
-
-    const y = exporters.map((exporter) => exporter.trade_balance); // Trade Balance
-    const x1 = exporters.map((exporter) => exporter.quantity_imported); // Quantity Imported
-    const x2 = exporters.map((exporter) => exporter.value_imported); // Value Imported
-    const x3 = exporters.map((exporter) => exporter.unit_value); // Unit Value
-
-    const {
-      x1Sum,
-      x2Sum,
-      x3Sum,
-      x1x1Sum,
-      x1x2Sum,
-      x1x3Sum,
-      x2x2Sum,
-      x2x3Sum,
-      x3x3Sum,
-      ySum,
-      x1ySum,
-      x2ySum,
-      x3ySum,
-    } = this.sumingValues(y, x1, x2, x3);
-
-    const matrixValues = {
-      n: y.length,
-      x1Sum,
-      x2Sum,
-      x3Sum,
-      x1x1Sum,
-      x1x2Sum,
-      x1x3Sum,
-      x2x2Sum,
-      x2x3Sum,
-      x3x3Sum,
-      ySum,
-      x1ySum,
-      x2ySum,
-      x3ySum,
-    };
-
-    const coef = this.matrixModelling(matrixValues);
-
-    const prediction =
-      coef.b0 +
-      coef.b1 * importer.quantity_imported +
-      coef.b2 * importer.value_imported +
-      coef.b3 * importer.unit_value;
-
-    // const rSquaredRequirement = exporters.map((prediction, index) => {
-    //   const mean = ySum / exporters.length;
-    //   const actualValue = y[index];
-    //   const actualPredictDiff = (actualValue - prediction) ** 2;
-    //   const actualMeanDiff = (actualValue - mean) ** 2;
-    //   return [actualPredictDiff, actualMeanDiff];
-    // });
-
-    // const resultanRSquaredRequirement = rSquaredRequirement.reduce(
-    //   (acc, array) => {
-    //     acc[0] += array[0];
-    //     acc[1] += array[1];
-    //     return acc;
-    //   },
-    //   [0, 0],
-    // );
-
-    // const rSquared =
-    //   1 - resultanRSquaredRequirement[0] / resultanRSquaredRequirement[1];
-
-    return {
-      message: 'Regression successfully',
-      importer,
-      exporters,
-      // rSquared,
-      result: { importer: importer.name, prediction },
+      message: 'Calculate successfully',
+      finalResult,
     };
   }
 
@@ -608,14 +547,17 @@ export class RegressionService {
       (accumulator, currentValue) => accumulator + currentValue,
       0,
     );
+
     const x1Sum = x1.reduce(
       (accumulator, currentValue) => accumulator + currentValue,
       0,
     );
+
     const x2Sum = x2.reduce(
       (accumulator, currentValue) => accumulator + currentValue,
       0,
     );
+
     const x3Sum = x3.reduce(
       (accumulator, currentValue) => accumulator + currentValue,
       0,
@@ -693,7 +635,7 @@ export class RegressionService {
   };
 
   RSquared = (predictions: number[], y: number[], ySum: number) => {
-    const result = predictions.reduce<[number, number]>(
+    const result = predictions.reduce(
       (acc, prediction, index) => {
         const mean = ySum / predictions.length;
         const actualValue = y[index];
@@ -724,17 +666,19 @@ export class RegressionService {
       0,
     ) / y.length;
 
-  writeJSON = (result) => {
+  writeJSON = (result, filename = 'testing-result.json') => {
     const __dirname = path.join(process.cwd(), 'src', 'data');
-    const filePath = path.join(__dirname, 'testing-result.json');
+    const filePath = path.join(__dirname, filename);
 
     let existingData = [];
 
-    if (fs.existsSync(filePath)) {
-      // Read and parse the existing JSON file
-      const fileContent = fs.readFileSync(filePath, 'utf-8');
-      existingData = JSON.parse(fileContent);
+    if (!fs.existsSync(filePath)) {
+      // If the file doesn't exist, create a new file with an empty array
+      fs.writeFileSync(filePath, '[]');
     }
+
+    const fileContent = fs.readFileSync(filePath, 'utf-8');
+    existingData = JSON.parse(fileContent);
 
     // Append new data to the existing array
     if (Array.isArray(existingData)) {
@@ -747,9 +691,9 @@ export class RegressionService {
     fs.writeFileSync(filePath, JSON.stringify(existingData, null, 2), 'utf-8');
   };
 
-  readJSON = () => {
+  readJSON = (filename = 'testing-result.json') => {
     const __dirname = path.join(process.cwd(), 'src', 'data');
-    const filePath = path.join(__dirname, 'testing-result.json');
+    const filePath = path.join(__dirname, filename);
 
     if (fs.existsSync(filePath)) {
       const fileContent = fs.readFileSync(filePath, 'utf-8');
@@ -758,4 +702,31 @@ export class RegressionService {
       return []; // Return an empty array if the file doesn't exist
     }
   };
+
+  async delete() {
+    const exportersToDelete = await this.databaseService.exporters.findMany({
+      where: {
+        trade_balance: 0,
+        quantity_imported: 0,
+        value_imported: 0,
+        unit_value: 0,
+      },
+    });
+
+    let i = 1;
+
+    for (const exporter of exportersToDelete) {
+      await this.databaseService.exporters.delete({
+        where: {
+          id: exporter.id,
+        },
+      });
+      console.log(
+        `exporter id ${exporter.id} Terhapus || ${i} : ${exportersToDelete.length} `,
+      );
+      i++;
+    }
+
+    return {};
+  }
 }

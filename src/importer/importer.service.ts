@@ -25,8 +25,4 @@ export class ImporterService {
 
     return importers;
   }
-
-  findOne(id: number) {
-    return `This action returns a #${id} importer`;
-  }
 }

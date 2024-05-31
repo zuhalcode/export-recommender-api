@@ -29,9 +29,9 @@ export class ProductService {
     try {
       const products = await this.databaseService.products.findMany({
         where: { hscode },
+        orderBy: { name: 'asc' },
         select: { id: true, hscode: true, name: true, desc: true },
       });
-      console.log(products);
       return products;
     } catch (error) {
       console.log(error);
@@ -52,14 +52,19 @@ export class ProductService {
 
   async create(): Promise<CreateProductResponse> {
     try {
-      const filePath = join(process.cwd(), 'src', 'data', 'products.json');
+      const filePath = join(
+        process.cwd(),
+        'src',
+        'data',
+        'combination-products.json',
+      );
       const rawData = fs.readFileSync(filePath, 'utf-8');
       const productData = JSON.parse(rawData);
 
       const createdProducts = await this.databaseService.products.createMany({
         data: productData.map((data) => ({
-          name: data.name,
-          desc: data.desc,
+          name: data.name.toLowerCase(),
+          desc: data.desc.toLowerCase(),
           hscode: data.hscode,
         })),
         skipDuplicates: true, // Skip creating entries with duplicate fields

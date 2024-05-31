@@ -164,6 +164,105 @@ export class TrademapService {
 
   async findAll(): Promise<GetTrademapResponse[]> {
     const trademaps = await this.databaseService.trademap.findMany({
+      where: {
+        hscode: {
+          notIn: [
+            '0309',
+            '0402',
+            ...Array.from({ length: 9 }, (_, i) => `050${i + 3}`),
+            '0807',
+            '0810',
+            '1002',
+            '1005',
+            '1008',
+            ...Array.from({ length: 4 }, (_, i) => `140${i + 1}`),
+            '1508',
+            '1513',
+            '1518',
+            '1701',
+            '1802',
+            '1901',
+            '2009',
+            '2106',
+            '2209',
+            '2309',
+            '2401',
+            '2402',
+            '2403',
+            '2404',
+            '3401',
+            '3402',
+            '3809',
+            '3812',
+            '3818',
+            ...Array.from({ length: 7 }, (_, i) => `382${i + 1}`),
+            '4005',
+            '4016',
+            ...Array.from({ length: 3 }, (_, i) => `420${i + 4}`),
+            '6101',
+            ...Array.from({ length: 5 }, (_, i) => `610${i + 6}`),
+            '6206',
+            '6208',
+            '9405',
+            // add
+            '0303',
+            '0404',
+            '0406',
+            '0410',
+            '0602',
+            '0709',
+            '0710',
+            '0713',
+            '0714',
+            '0903',
+            '0905',
+            '1003',
+            '1502',
+            '1504',
+            '1505',
+            '1509',
+            '1521',
+            '1601',
+            '1602',
+            '1605',
+            '1702',
+            '1704',
+            '1806',
+            '1902',
+            '1905',
+            '2004',
+            '2006',
+            '2102',
+            '2103',
+            '2105',
+            '2202',
+            '2203',
+            '2208',
+            '2303',
+            '3403',
+            '3801',
+            '3806',
+            '3811',
+            '3813',
+            '3814',
+            '3815',
+            '3816',
+            '3820',
+            '4002',
+            '4008',
+            '4009',
+            '4010',
+            '4011',
+            '4201',
+            '4203',
+            '6213',
+            '6404',
+            '6405',
+            '6702',
+            '9402',
+          ],
+        },
+      },
       select: { hscode: true, name: true },
     });
 
@@ -207,6 +306,7 @@ export class TrademapService {
           link: item.link, // Map link to url assuming link is used for URL
         })),
       });
+
     return {
       status: HttpStatus.CREATED,
       data: createdTrademapCategories,
@@ -216,7 +316,7 @@ export class TrademapService {
 
   async createTrademap() {
     try {
-      const trademapJSONData = this.getLocalJSONData('scrapedHSCODE.json');
+      const trademapJSONData = this.getLocalJSONData('scrapedHscodeFix.json');
 
       const existingData = await this.databaseService.trademap.findMany({
         where: {
@@ -251,17 +351,28 @@ export class TrademapService {
     try {
       const importersJSONData = this.getLocalJSONData('clean-importers.json');
 
+      const allHscodes = (
+        await this.databaseService.trademap.findMany({
+          select: { hscode: true },
+        })
+      ).map((data) => data.hscode);
+
       const createdData = await this.databaseService.importers.createMany({
-        data: importersJSONData.map((data) => ({
-          id: data.id,
-          name: data.name,
-          hscode: data.hscode,
-          trade_balance: data.trade_balance,
-          quantity_imported: data.quantity_imported,
-          value_imported: data.value_imported,
-          quantity_unit: data.quantity_unit,
-          unit_value: data.unit_value || 0,
-        })),
+        data: importersJSONData.map((data, i) => {
+          if (allHscodes.includes(data.hscode)) {
+            console.log(`Importer ke-${i + 1} hscode ${data.hscode}`);
+            return {
+              id: data.id,
+              name: data.name,
+              hscode: data.hscode,
+              trade_balance: data.trade_balance,
+              quantity_imported: data.quantity_imported,
+              value_imported: data.value_imported,
+              quantity_unit: data.quantity_unit,
+              unit_value: data.unit_value || 0,
+            };
+          }
+        }),
       });
 
       return createdData;
@@ -277,21 +388,35 @@ export class TrademapService {
         'clean',
       );
 
+      const allImporters = (
+        await this.databaseService.importers.findMany({
+          select: { id: true },
+        })
+      ).map((data) => data.id);
+
       const createdData = await this.databaseService.exporters.createMany({
-        data: exportersJSONData.map((data) => ({
-          importer_id: data.importer_id,
-          name: data.name,
-          trade_balance: parseFloat(
-            data.tradeBalance === '' ? 0 : data.tradeBalance,
-          ),
-          quantity_imported: parseFloat(
-            data.quantityImported === '' ? 0 : data.quantityImported,
-          ),
-          value_imported: parseFloat(
-            data.valueImported === '' ? 0 : data.valueImported,
-          ),
-          unit_value: parseFloat(data.unitValue === '' ? 0 : data.unitValue),
-        })),
+        data: exportersJSONData.map((data, i) => {
+          if (allImporters.includes(data.importer_id)) {
+            console.log(`Exporter ke-${i + 1}`);
+
+            return {
+              importer_id: data.importer_id,
+              name: data.name,
+              trade_balance: parseFloat(
+                data.tradeBalance === '' ? 0 : data.tradeBalance,
+              ),
+              quantity_imported: parseFloat(
+                data.quantityImported === '' ? 0 : data.quantityImported,
+              ),
+              value_imported: parseFloat(
+                data.valueImported === '' ? 0 : data.valueImported,
+              ),
+              unit_value: parseFloat(
+                data.unitValue === '' ? 0 : data.unitValue,
+              ),
+            };
+          }
+        }),
       });
 
       return { message: 'Exporters Created Successfully', createdData };

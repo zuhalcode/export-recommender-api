@@ -6,29 +6,37 @@ import { RegressionService } from './regression.service';
 export class RegressionController {
   constructor(private readonly regressionService: RegressionService) {}
 
-  @Get()
-  async getRsquaredAll() {
-    const data = await this.regressionService.getCalculate();
+  @Get('/accurate')
+  async getFinalAccuracy() {
+    const data = await this.regressionService.getFinalAccuracy();
 
     return { data };
   }
 
-  @Get(':hscode/:sort')
-  async multipleLinearRegression(
-    @Param('hscode') hscode: string,
-    @Param('sort') sort: string,
-  ) {
-    const data = await this.regressionService.multipleLinearRegression(
-      hscode,
-      sort,
-    );
+  @Get('/calculate2')
+  async getCalculate2Digit() {
+    const data = await this.regressionService.calculate2Digit();
 
     return { data };
   }
 
-  @Get('/partial')
-  async linearRegression() {
-    const data = await this.regressionService.linearRegression();
+  @Get('/calculate4')
+  async getCalculate4Digit() {
+    const data = await this.regressionService.calculate4Digit();
+
+    return { data };
+  }
+
+  @Get('/delete')
+  async delete() {
+    const data = await this.regressionService.delete();
+
+    return { data };
+  }
+
+  @Get(':hscode')
+  async multipleLinearRegression(@Param('hscode') hscode: string) {
+    const data = await this.regressionService.multipleLinearRegression(hscode);
 
     return { data };
   }
