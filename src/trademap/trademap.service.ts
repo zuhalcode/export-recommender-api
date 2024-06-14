@@ -164,105 +164,6 @@ export class TrademapService {
 
   async findAll(): Promise<GetTrademapResponse[]> {
     const trademaps = await this.databaseService.trademap.findMany({
-      where: {
-        hscode: {
-          notIn: [
-            '0309',
-            '0402',
-            ...Array.from({ length: 9 }, (_, i) => `050${i + 3}`),
-            '0807',
-            '0810',
-            '1002',
-            '1005',
-            '1008',
-            ...Array.from({ length: 4 }, (_, i) => `140${i + 1}`),
-            '1508',
-            '1513',
-            '1518',
-            '1701',
-            '1802',
-            '1901',
-            '2009',
-            '2106',
-            '2209',
-            '2309',
-            '2401',
-            '2402',
-            '2403',
-            '2404',
-            '3401',
-            '3402',
-            '3809',
-            '3812',
-            '3818',
-            ...Array.from({ length: 7 }, (_, i) => `382${i + 1}`),
-            '4005',
-            '4016',
-            ...Array.from({ length: 3 }, (_, i) => `420${i + 4}`),
-            '6101',
-            ...Array.from({ length: 5 }, (_, i) => `610${i + 6}`),
-            '6206',
-            '6208',
-            '9405',
-            // add
-            '0303',
-            '0404',
-            '0406',
-            '0410',
-            '0602',
-            '0709',
-            '0710',
-            '0713',
-            '0714',
-            '0903',
-            '0905',
-            '1003',
-            '1502',
-            '1504',
-            '1505',
-            '1509',
-            '1521',
-            '1601',
-            '1602',
-            '1605',
-            '1702',
-            '1704',
-            '1806',
-            '1902',
-            '1905',
-            '2004',
-            '2006',
-            '2102',
-            '2103',
-            '2105',
-            '2202',
-            '2203',
-            '2208',
-            '2303',
-            '3403',
-            '3801',
-            '3806',
-            '3811',
-            '3813',
-            '3814',
-            '3815',
-            '3816',
-            '3820',
-            '4002',
-            '4008',
-            '4009',
-            '4010',
-            '4011',
-            '4201',
-            '4203',
-            '6213',
-            '6404',
-            '6405',
-            '6702',
-            '9402',
-          ],
-        },
-      },
       select: { hscode: true, name: true },
     });
 
@@ -316,18 +217,27 @@ export class TrademapService {
 
   async createTrademap() {
     try {
-      const trademapJSONData = this.getLocalJSONData('scrapedHscodeFix.json');
+      const trademapJSONData = this.getLocalJSONData('scrapedHscode.json');
+
+      const hscodeFix = this.getLocalJSONData('accuracy-4digit.json').map(
+        (data) => data.hscode,
+      );
 
       const existingData = await this.databaseService.trademap.findMany({
         where: {
           hscode: {
-            in: trademapJSONData.map((data) => data.hscode),
+            in: hscodeFix,
           },
         },
       });
 
-      const newData = trademapJSONData.filter((data) => {
-        // Cek apakah hscode dari data saat ini sudah ada dalam data yang ada
+      // Filter trademapJSONData to only include entries with hscode in hscodeFix
+      const filteredTrademapJSONData = trademapJSONData.filter((data) =>
+        hscodeFix.includes(data.hscode),
+      );
+
+      const newData = filteredTrademapJSONData.filter((data) => {
+        // Check if hscode from current data already exists in existingData
         return !existingData.some(
           (existing) => existing.hscode === data.hscode,
         );
@@ -383,10 +293,7 @@ export class TrademapService {
 
   async createExporters() {
     try {
-      const exportersJSONData = this.getLocalJSONData(
-        'clean-exporters.json',
-        'clean',
-      );
+      const exportersJSONData = this.getLocalJSONData('clean-exporters.json');
 
       const allImporters = (
         await this.databaseService.importers.findMany({
@@ -1121,6 +1028,106 @@ export class TrademapService {
       } catch (error) {
         console.error('Error parsing JSON:', error);
       }
+    }
+  }
+
+  async sync() {
+    const trademaps = await this.databaseService.trademap.findMany({
+      where: { hscode: '0301' },
+    });
+
+    const existingImporters = this.getLocalJSONData('clean-importers.json');
+
+    for (const trademap of trademaps) {
+      const { hscode, link } = trademap;
+      const __dirname = join(process.cwd(), 'src', 'data');
+      const savedFilePath = join(__dirname, 'new-importers.json');
+
+      const filteredImportersByHscode = existingImporters.filter(
+        (data) => data.hscode === hscode,
+      );
+
+      const browser = await puppeteer.launch({
+        headless: false,
+        args: ['--no-sandbox'],
+      }); // Set headless to false for visibility
+      const page = await browser.newPage();
+
+      const scrapedImporters = [];
+
+      try {
+        await page.goto(link, { waitUntil: 'domcontentloaded' });
+        await page.select(
+          'select[name="ctl00$PageContent$GridViewPanelControl$DropDownList_PageSize"]',
+          '300',
+        );
+
+        // await page.waitForSelector('table');
+        await page.waitForNavigation({ waitUntil: 'domcontentloaded' });
+
+        // Wait until all <tr> elements inside the table are loaded
+        await page.waitForFunction(() => {
+          const rows = document.querySelectorAll('table tr');
+          return rows.length > 150; // Adjust the minimum expected number of rows as needed
+        });
+
+        // Extract data from all <tr> elements
+        const tableData = await page.evaluate(() => {
+          const rows = Array.from(document.querySelectorAll('tr'));
+          const data = [];
+          for (let i = 15; i < rows.length - 6; i++) {
+            const columns = Array.from(rows[i].querySelectorAll('td'));
+
+            const rowData = columns
+              .slice(1, 7)
+              .map((column) => column.innerText);
+
+            const mappedData = {
+              importer: rowData[0].trim().toLowerCase(),
+              value_imported: rowData[1],
+              trade_balance: rowData[2],
+              quantity_imported: rowData[3],
+              quantity_unit: rowData[4].toLowerCase(),
+              unit_value: rowData[5],
+            };
+
+            data.push(mappedData);
+          }
+          return data;
+        });
+
+        const tableDataWithHscode = tableData.map((item) => {
+          return { ...item, hscode };
+        });
+
+        // Read the existing file to get its content
+        fs.readFile(savedFilePath, 'utf8', (err, data) => {
+          if (err) {
+            console.error('Error reading file:', err);
+            return;
+          }
+
+          let existingData = [];
+
+          try {
+            existingData = JSON.parse(data);
+          } catch (error) {
+            console.error('Error parsing JSON:', error);
+            return;
+          }
+
+          // Push the new data to the existing array
+          existingData.push(...tableDataWithHscode);
+        });
+
+        scrapedImporters.push(...tableDataWithHscode);
+      } catch (error) {
+        console.log(error);
+      } finally {
+        await browser.close();
+      }
+
+      return { scrapedImporters, filteredImportersByHscode };
     }
   }
 

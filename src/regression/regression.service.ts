@@ -4,7 +4,6 @@ import { DatabaseService } from 'src/common/database.service';
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { prod } from 'mathjs';
 
 @Injectable()
 export class RegressionService {
@@ -15,8 +14,52 @@ export class RegressionService {
       where: { hscode },
     });
 
+    const { coef } = this.getModel();
+
     const negativeResult = [];
     const positiveResult = [];
+
+    for (const importer of importers) {
+      const prediction: number =
+        coef.b0 +
+        coef.b1 * importer.quantity_imported +
+        coef.b2 * importer.value_imported +
+        coef.b3 * importer.unit_value;
+
+      if (!isNaN(prediction)) {
+        const object = {
+          id: importer.id,
+          hscode: importer.hscode,
+          name: importer.name,
+          trade_balance: importer.trade_balance,
+          quantity_imported: importer.quantity_imported,
+          value_imported: importer.value_imported,
+          unit_value: importer.unit_value,
+          quantity_unit: importer.quantity_unit,
+          prediction,
+        };
+
+        if (object.prediction < 0) negativeResult.push(object);
+        else positiveResult.push(object);
+      }
+    }
+
+    // Sorting untuk nilai prediksi < 0: terkecil ke terbesar, kemudian R Squared terbesar ke terkecil
+    negativeResult.sort((a, b) => b.rSquared - a.rSquared);
+
+    // Sorting untuk nilai prediksi > 0: terbesar ke terkecil, kemudian R Squared terbesar ke terkecil
+    positiveResult.sort((a, b) => b.rSquared - a.rSquared);
+
+    const result = [...negativeResult, ...positiveResult];
+
+    return {
+      message: 'Regression successfully',
+      result,
+    };
+  }
+
+  async dataModelling() {
+    const importers = await this.databaseService.importers.findMany();
 
     for (const importer of importers) {
       const exporters = await this.databaseService.exporters.findMany({
@@ -80,7 +123,7 @@ export class RegressionService {
         coef.b2 * importer.value_imported +
         coef.b3 * importer.unit_value;
 
-      if (!isNaN(ImporterPrediction)) {
+      if (!isNaN(ImporterPrediction) && rSquared < 1 && rSquared >= 0.99) {
         const object = {
           n: exporters.length,
           id: importer.id,
@@ -98,334 +141,37 @@ export class RegressionService {
           RMSE,
         };
 
-        if (object.rSquared > 0.5) {
-          if (object.prediction < 0) negativeResult.push(object);
-          else positiveResult.push(object);
-        }
+        this.writeJSON(object, 'model.json');
+
+        console.log(`Importer : ${importer.id} ~ ${importer.hscode}`);
       }
     }
-
-    // Sorting untuk nilai prediksi < 0: terkecil ke terbesar, kemudian R Squared terbesar ke terkecil
-    negativeResult.sort((a, b) => b.rSquared - a.rSquared);
-
-    // Sorting untuk nilai prediksi > 0: terbesar ke terkecil, kemudian R Squared terbesar ke terkecil
-    positiveResult.sort((a, b) => b.rSquared - a.rSquared);
-
-    const result = [...negativeResult, ...positiveResult];
 
     return {
       message: 'Regression successfully',
-      result,
     };
   }
 
-  async getFinalAccuracy() {
-    const testingData = this.readJSON('accuracy-4digit.json').map(
-      (data) => data.hscode,
-    );
+  async dataTesting() {
+    const { rSquared, MAE, RMSE } = this.getModel();
 
-    const hscodes = [];
-
-    for (const hscode of testingData) {
-      const products = await this.databaseService.products.findMany({
-        where: { hscode },
-      });
-
-      if (products.length === 0) hscodes.push(hscode);
-    }
-
-    return { hscodes };
-    const RSquared =
-      testingData
-        .map((data) => Math.abs(data.RSquared))
-        .filter((value) => !isNaN(value))
-        .reduce((total, value) => total + value, 0) /
-      testingData
-        .map((data) => Math.abs(data.RSquared))
-        .filter((value) => !isNaN(value)).length;
-
-    const MAE =
-      testingData
-        .map((data) => data.MAE)
-        .filter((value) => !isNaN(value))
-        .reduce((total, value) => total + value, 0) /
-      testingData.map((data) => data.MAE).filter((value) => !isNaN(value))
-        .length;
-
-    const RMSE =
-      testingData
-        .map((data) => data.RMSE)
-        .filter((value) => !isNaN(value))
-        .reduce((total, value) => total + value, 0) /
-      testingData.map((data) => data.RMSE).filter((value) => !isNaN(value))
-        .length;
-
-    const finalResult = {
-      RSquared,
+    return {
+      message: 'Testing successfully',
+      rSquared,
       MAE,
       RMSE,
     };
-
-    return {
-      message: 'Testing Accuracy successfully',
-      finalResult,
-    };
   }
 
-  async calculate2Digit() {
-    const testingData = this.readJSON('accuracy-4digit.json');
-
-    const hscodes = [
-      '03',
-      '04',
-      '05',
-      '06',
-      '07',
-      '08',
-      '09',
-      '10',
-      '14',
-      '15',
-      '16',
-      '17',
-      '18',
-      '19',
-      '20',
-      '21',
-      '22',
-      '23',
-      '34',
-      '38',
-      '40',
-      '42',
-      '61',
-      '62',
-      '64',
-      '67',
-      '94',
-    ];
-
-    const finalResult = [];
-
-    for (const hscode of hscodes) {
-      const filteredData = testingData.filter((item) =>
-        item.hscode.startsWith(hscode),
-      );
-
-      const RSquared =
-        filteredData
-          .map((data) => data.RSquared)
-          .reduce((total, value) => total + value, 0) / filteredData.length;
-
-      const MAE =
-        filteredData
-          .map((data) => data.MAE)
-          .reduce((total, value) => total + value, 0) / filteredData.length;
-
-      const RMSE =
-        filteredData
-          .map((data) => data.RMSE)
-          .filter((value) => !isNaN(value))
-          .reduce((total, value) => total + value, 0) / filteredData.length;
-
-      const object = {
-        hscode,
-        RSquared,
-        MAE,
-        RMSE,
-      };
-
-      finalResult.push({ object });
-
-      this.writeJSON(object, 'accuracy-2digit.json');
-    }
-
-    return {
-      message: 'Calculate successfully',
-      finalResult,
-    };
-  }
-
-  async calculate4Digit() {
-    const hscodes = this.readJSON('scrapedHscode.json').map(
-      (data) => data.hscode,
+  getModel = () => {
+    const models: any[] = this.readJSON('model.json');
+    const { coef, rSquared, MAE, RMSE } = models.reduce(
+      (max, model) => (model.rSquared > max.rSquared ? model : max),
+      models[0],
     );
 
-    // const importers = this.readJSON('raw-importers.json').length;
-    // const cleanImporters = this.readJSON('clean-importers.json').length;
-    // const exporter = this.readJSON('raw-exporters.json').length;
-    // const cleanExporters = this.readJSON('clean-exporters.json').length;
-
-    // return {
-    //   importers,
-    //   cleanImporters,
-    //   exporter,
-    //   cleanExporters,
-    // };
-
-    const finalResult = [];
-
-    for (const hscode of hscodes) {
-      console.log(`Calculate hscode ${hscode}`);
-      const importers = await this.databaseService.importers.findMany({
-        where: { hscode },
-        select: {
-          id: true,
-          hscode: true,
-          name: true,
-          trade_balance: true,
-          quantity_imported: true,
-          value_imported: true,
-          unit_value: true,
-          quantity_unit: true,
-        },
-      });
-
-      const result = [];
-
-      for (const importer of importers) {
-        const exporters = await this.databaseService.exporters.findMany({
-          where: {
-            importer_id: importer.id,
-            trade_balance: { not: 0 },
-          },
-          select: {
-            name: true,
-            trade_balance: true,
-            quantity_imported: true,
-            value_imported: true,
-            unit_value: true,
-          },
-        });
-
-        const y: number[] = exporters.map((exporter) => exporter.trade_balance); // Trade Balance
-
-        const x1: number[] = exporters.map(
-          (exporter) => exporter.quantity_imported,
-        ); // Quantity Imported
-
-        const x2: number[] = exporters.map(
-          (exporter) => exporter.value_imported,
-        ); // Value Imported
-
-        const x3: number[] = exporters.map((exporter) => exporter.unit_value); // Unit Value
-
-        const {
-          x1Sum,
-          x2Sum,
-          x3Sum,
-          x1x1Sum,
-          x1x2Sum,
-          x1x3Sum,
-          x2x2Sum,
-          x2x3Sum,
-          x3x3Sum,
-          ySum,
-          x1ySum,
-          x2ySum,
-          x3ySum,
-        } = this.sumingValues(y, x1, x2, x3);
-
-        const matrixValues = {
-          n: y.length,
-          x1Sum,
-          x2Sum,
-          x3Sum,
-          x1x1Sum,
-          x1x2Sum,
-          x1x3Sum,
-          x2x2Sum,
-          x2x3Sum,
-          x3x3Sum,
-          ySum,
-          x1ySum,
-          x2ySum,
-          x3ySum,
-        };
-
-        const coef: { b0: number; b1: number; b2: number; b3: number } =
-          this.matrixModelling(matrixValues);
-
-        const exporterPredictions: number[] = exporters.map(
-          (_, index) =>
-            coef.b0 +
-            coef.b1 * x1[index] +
-            coef.b2 * x2[index] +
-            coef.b3 * x3[index],
-        );
-
-        // Calculate R Squared
-        const rSquared: number = this.RSquared(exporterPredictions, y, ySum);
-
-        // Calculate MAE
-        const MAE: number = this.MAE(exporterPredictions, y);
-
-        // Calculate RMSE
-        const RMSE: number = this.RMSE(exporterPredictions, y);
-
-        const importerPrediction: number =
-          coef.b0 +
-          coef.b1 * importer.quantity_imported +
-          coef.b2 * importer.value_imported +
-          coef.b3 * importer.unit_value;
-
-        if (!isNaN(importerPrediction)) {
-          const object = {
-            n: exporters.length,
-            hscode: importer.hscode,
-            name: importer.name,
-            trade_balance: importer.trade_balance,
-            prediction: importerPrediction,
-            rSquared,
-            MAE,
-            RMSE,
-          };
-
-          result.push(object);
-        }
-      }
-
-      const avgRSquared =
-        result
-          .map((data) => data.rSquared)
-          .filter((value) => !isNaN(value))
-          .reduce((total, value) => total + value, 0) /
-        result.map((data) => data.rSquared).filter((value) => !isNaN(value))
-          .length;
-
-      const avgMAE =
-        result
-          .map((data) => data.MAE)
-          .filter((value) => !isNaN(value))
-          .reduce((total, value) => total + value, 0) /
-        result.map((data) => data.MAE).filter((value) => !isNaN(value)).length;
-
-      const avgRMSE =
-        result
-          .map((data) => data.RMSE)
-          .filter((value) => !isNaN(value))
-          .reduce((total, value) => total + value, 0) /
-        result.map((data) => data.RMSE).filter((value) => !isNaN(value)).length;
-
-      if (!isNaN(avgRSquared)) {
-        const result4Digit = {
-          hscode,
-          RSquared: avgRSquared,
-          MAE: avgMAE,
-          RMSE: avgRMSE,
-        };
-
-        // this.writeJSON(result4Digit, 'accuracy-new-4digit.json');
-
-        finalResult.push({ result4Digit });
-      }
-    }
-
-    return {
-      message: 'Calculate successfully',
-      finalResult,
-    };
-  }
+    return { coef, rSquared, MAE, RMSE };
+  };
 
   determinant = (matrix: number[][]) => {
     if (matrix.length !== 4 || matrix[0].length !== 4) {

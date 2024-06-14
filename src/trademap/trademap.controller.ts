@@ -13,6 +13,13 @@ export class TrademapController {
   constructor(private readonly trademapService: TrademapService) {}
 
   // FIX CONTROLLER
+  @Get('/sync')
+  async sync() {
+    const result = await this.trademapService.sync();
+
+    return { data: result };
+  }
+
   @Get('/scrape/hscode')
   async scrapeHscode(): Promise<WebResponse<ScrapeHscodeResponse[]>> {
     const scrapedHscode = await this.trademapService.scrapeHscodeData();

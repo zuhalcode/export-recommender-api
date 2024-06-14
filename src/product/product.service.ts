@@ -52,12 +52,7 @@ export class ProductService {
 
   async create(): Promise<CreateProductResponse> {
     try {
-      const filePath = join(
-        process.cwd(),
-        'src',
-        'data',
-        'combination-products.json',
-      );
+      const filePath = join(process.cwd(), 'src', 'data', 'products.json');
       const rawData = fs.readFileSync(filePath, 'utf-8');
       const productData = JSON.parse(rawData);
 
