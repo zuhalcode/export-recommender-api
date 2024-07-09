@@ -2,7 +2,7 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
 import puppeteer, { Page } from 'puppeteer';
 import * as fs from 'fs';
-import { join } from 'path';
+import path, { join } from 'path';
 import {
   GetTrademapResponse,
   ScrapeExporterResponse,
@@ -19,7 +19,6 @@ export class TrademapService {
     '#ctl00_NavigationControl_DropDownList_Product';
 
   // DIRECT USED FUNCTION
-
   private getLocalJSONData(filename: string, dir: string = '') {
     try {
       const filePath = join(process.cwd(), 'src', 'data', dir, filename);
@@ -150,6 +149,8 @@ export class TrademapService {
         link: resultUrls[i],
       }));
 
+      this.writeJSON(trademapCategories, 'trademap-nonmigas.json');
+
       trademapCategories.forEach((data) =>
         !resultData.some((existingData) => existingData.hscode === data.hscode)
           ? resultData.push(data)
@@ -157,11 +158,9 @@ export class TrademapService {
       );
     } else return { message: 'Dropdown element not found' };
   }
-
   // Direct used function
 
   // CRUD
-
   async findAll(): Promise<GetTrademapResponse[]> {
     const trademaps = await this.databaseService.trademap.findMany({
       select: { hscode: true, name: true },
@@ -331,11 +330,9 @@ export class TrademapService {
       console.log(e);
     }
   }
-
   // CRUD
 
   // SCRAPING
-
   async scrapeHscodeData() {
     const trademapData = this.getLocalJSONData('trademap-nonmigas.json');
 
@@ -800,11 +797,9 @@ export class TrademapService {
 
     return { scraped_data };
   }
-
   // SCRAPING
 
   // CLEANING
-
   async clean() {
     const filename = 'raw-exporters';
     const __dirname = join(process.cwd(), 'src', 'data');
@@ -1030,106 +1025,30 @@ export class TrademapService {
       }
     }
   }
-
-  async sync() {
-    const trademaps = await this.databaseService.trademap.findMany({
-      where: { hscode: '0301' },
-    });
-
-    const existingImporters = this.getLocalJSONData('clean-importers.json');
-
-    for (const trademap of trademaps) {
-      const { hscode, link } = trademap;
-      const __dirname = join(process.cwd(), 'src', 'data');
-      const savedFilePath = join(__dirname, 'new-importers.json');
-
-      const filteredImportersByHscode = existingImporters.filter(
-        (data) => data.hscode === hscode,
-      );
-
-      const browser = await puppeteer.launch({
-        headless: false,
-        args: ['--no-sandbox'],
-      }); // Set headless to false for visibility
-      const page = await browser.newPage();
-
-      const scrapedImporters = [];
-
-      try {
-        await page.goto(link, { waitUntil: 'domcontentloaded' });
-        await page.select(
-          'select[name="ctl00$PageContent$GridViewPanelControl$DropDownList_PageSize"]',
-          '300',
-        );
-
-        // await page.waitForSelector('table');
-        await page.waitForNavigation({ waitUntil: 'domcontentloaded' });
-
-        // Wait until all <tr> elements inside the table are loaded
-        await page.waitForFunction(() => {
-          const rows = document.querySelectorAll('table tr');
-          return rows.length > 150; // Adjust the minimum expected number of rows as needed
-        });
-
-        // Extract data from all <tr> elements
-        const tableData = await page.evaluate(() => {
-          const rows = Array.from(document.querySelectorAll('tr'));
-          const data = [];
-          for (let i = 15; i < rows.length - 6; i++) {
-            const columns = Array.from(rows[i].querySelectorAll('td'));
-
-            const rowData = columns
-              .slice(1, 7)
-              .map((column) => column.innerText);
-
-            const mappedData = {
-              importer: rowData[0].trim().toLowerCase(),
-              value_imported: rowData[1],
-              trade_balance: rowData[2],
-              quantity_imported: rowData[3],
-              quantity_unit: rowData[4].toLowerCase(),
-              unit_value: rowData[5],
-            };
-
-            data.push(mappedData);
-          }
-          return data;
-        });
-
-        const tableDataWithHscode = tableData.map((item) => {
-          return { ...item, hscode };
-        });
-
-        // Read the existing file to get its content
-        fs.readFile(savedFilePath, 'utf8', (err, data) => {
-          if (err) {
-            console.error('Error reading file:', err);
-            return;
-          }
-
-          let existingData = [];
-
-          try {
-            existingData = JSON.parse(data);
-          } catch (error) {
-            console.error('Error parsing JSON:', error);
-            return;
-          }
-
-          // Push the new data to the existing array
-          existingData.push(...tableDataWithHscode);
-        });
-
-        scrapedImporters.push(...tableDataWithHscode);
-      } catch (error) {
-        console.log(error);
-      } finally {
-        await browser.close();
-      }
-
-      return { scrapedImporters, filteredImportersByHscode };
-    }
-  }
-
   // CLEANING
+
+  writeJSON = (result, filename = 'testing-result.json') => {
+    const __dirname = path.join(process.cwd(), 'src', 'data');
+    const filePath = path.join(__dirname, filename);
+
+    let existingData = [];
+
+    if (!fs.existsSync(filePath)) {
+      // If the file doesn't exist, create a new file with an empty array
+      fs.writeFileSync(filePath, '[]');
+    }
+
+    const fileContent = fs.readFileSync(filePath, 'utf-8');
+    existingData = JSON.parse(fileContent);
+
+    // Append new data to the existing array
+    if (Array.isArray(existingData)) {
+      existingData.push(result);
+    } else {
+      existingData = [result]; // If not an array, convert it to an array
+    }
+
+    // Write the updated data back to the file
+    fs.writeFileSync(filePath, JSON.stringify(existingData, null, 2), 'utf-8');
+  };
 }

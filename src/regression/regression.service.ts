@@ -157,14 +157,15 @@ export class RegressionService {
 
     return {
       message: 'Testing successfully',
-      rSquared,
-      MAE,
-      RMSE,
+      'Model Accuracy': rSquared,
+      'Error MAE (range 0 - 1M USD)': MAE,
+      'Error RMSE (range 0 - 1M USD)': RMSE,
     };
   }
 
   getModel = () => {
     const models: any[] = this.readJSON('model.json');
+
     const { coef, rSquared, MAE, RMSE } = models.reduce(
       (max, model) => (model.rSquared > max.rSquared ? model : max),
       models[0],
